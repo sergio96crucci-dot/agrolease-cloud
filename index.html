@@ -69,7 +69,7 @@
     <div style="padding:10px; display:flex; gap:5px;">
         <button onclick="exportData()" style="flex:1; font-size:10px; padding:5px; border-radius:4px; border:1px solid #ccc; cursor:pointer">Bajar Backup</button>
         <button onclick="document.getElementById('import').click()" style="flex:1; font-size:10px; padding:5px; border-radius:4px; border:1px solid #ccc; background:#eff6ff; cursor:pointer">Subir a Nube</button>
-        <input type="file" id="import" style="display:none" onchange="importData(this)">
+        <input type="file" id="import" style="display:none" accept=".json" onchange="importData(this)">
     </div>
 </div>
 
@@ -168,7 +168,6 @@
     }
 
     function init() {
-        // Mantiene tus coordenadas correctas
         map = L.map('map').setView([-32.714, -62.719], 13);
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}').addTo(map);
 
@@ -183,11 +182,16 @@
             editingId = null; openModal();
         });
 
-        // Sincronización en vivo con Firebase
+        // Sincronización en vivo con Firebase (parcheando las coordenadas)
         db.collection("lotes").onSnapshot((querySnapshot) => {
             fields = [];
             querySnapshot.forEach((doc) => {
-                fields.push(doc.data());
+                let data = doc.data();
+                // Si viene como texto (string), lo volvemos a hacer lista
+                if (typeof data.coords === 'string') {
+                    data.coords = JSON.parse(data.coords);
+                }
+                fields.push(data);
             });
             renderAll();
         });
@@ -215,6 +219,7 @@
         if (!isOwn && !producer) return alert("Ingresá el Productor.");
 
         const fieldId = editingId ? editingId : Date.now();
+        let rawCoords = editingId ? fields.find(f => f.id === editingId).coords : lastLayer.getLatLngs()[0].map(ll => [ll.lat, ll.lng]);
 
         const data = {
             id: fieldId,
@@ -224,7 +229,8 @@
             ha: parseFloat(document.getElementById('f-ha').value || 0),
             date: isOwn ? null : document.getElementById('f-date').value,
             notes: document.getElementById('f-notes').value,
-            coords: editingId ? fields.find(f => f.id === editingId).coords : lastLayer.getLatLngs()[0].map(ll => [ll.lat, ll.lng])
+            // Guardamos las coordenadas como texto para que Firebase no se enoje
+            coords: JSON.stringify(rawCoords) 
         };
         
         db.collection("lotes").doc(fieldId.toString()).set(data)
@@ -267,16 +273,19 @@
                 list.appendChild(card);
             }
 
-            const poly = L.polygon(f.coords, polyStyle).addTo(drawnItems);
-            if (!q || matches) {
-                const popupTitle = f.isOwn ? f.owner + ' (PROPIO)' : f.producer;
-                poly.bindPopup(`
-                    <b style="font-size:14px">${popupTitle}</b><br>
-                    <span style="font-size:11px;color:#666">${f.isOwn ? 'Campo Propio' : 'Dueño: ' + f.owner}</span><br>
-                    Estado: ${status.label}<br><br>
-                    <button onclick="editField(${f.id})" style="padding:4px 8px; cursor:pointer; background:var(--primary); color:white; border:none; border-radius:4px;">Editar</button>
-                    <button onclick="deleteField(${f.id})" style="padding:4px 8px; cursor:pointer; background:var(--danger); color:white; border:none; border-radius:4px;">Borrar</button>
-                `);
+            // Solo dibujamos si coords es un array válido
+            if (Array.isArray(f.coords)) {
+                const poly = L.polygon(f.coords, polyStyle).addTo(drawnItems);
+                if (!q || matches) {
+                    const popupTitle = f.isOwn ? f.owner + ' (PROPIO)' : f.producer;
+                    poly.bindPopup(`
+                        <b style="font-size:14px">${popupTitle}</b><br>
+                        <span style="font-size:11px;color:#666">${f.isOwn ? 'Campo Propio' : 'Dueño: ' + f.owner}</span><br>
+                        Estado: ${status.label}<br><br>
+                        <button onclick="editField(${f.id})" style="padding:4px 8px; cursor:pointer; background:var(--primary); color:white; border:none; border-radius:4px;">Editar</button>
+                        <button onclick="deleteField(${f.id})" style="padding:4px 8px; cursor:pointer; background:var(--danger); color:white; border:none; border-radius:4px;">Borrar</button>
+                    `);
+                }
             }
         });
         document.getElementById('total-ha').innerText = Math.round(totalHa);
@@ -315,9 +324,15 @@
         reader.onload = async () => { 
             const backupFields = JSON.parse(reader.result); 
             for (const f of backupFields) {
-                await db.collection("lotes").doc(f.id.toString()).set(f);
+                let dataToSave = { ...f };
+                // Parche: convertimos el array anidado a texto antes de subirlo
+                if (Array.isArray(dataToSave.coords)) {
+                    dataToSave.coords = JSON.stringify(dataToSave.coords);
+                }
+                await db.collection("lotes").doc(f.id.toString()).set(dataToSave);
             }
             alert("¡Backup cargado en la nube correctamente!");
+            document.getElementById('import').value = ''; // Limpiamos el input
         }; 
         reader.readAsText(input.files[0]); 
     }
