@@ -128,7 +128,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 
 <script>
-    // Configuración exacta de tu Firebase
     const firebaseConfig = {
       apiKey: "AIzaSyDi70QeV1iJhGg-s4jvvgDGkzY25sk4DMM",
       authDomain: "agrolease-cloud.firebaseapp.com",
@@ -184,12 +183,10 @@
             editingId = null; openModal();
         });
 
-        // Sincronización en vivo con Firebase (parcheando las coordenadas)
         db.collection("lotes").onSnapshot((querySnapshot) => {
             fields = [];
             querySnapshot.forEach((doc) => {
                 let data = doc.data();
-                // Si viene como texto (string), lo volvemos a hacer lista
                 if (typeof data.coords === 'string') {
                     data.coords = JSON.parse(data.coords);
                 }
@@ -231,14 +228,11 @@
             ha: parseFloat(document.getElementById('f-ha').value || 0),
             date: isOwn ? null : document.getElementById('f-date').value,
             notes: document.getElementById('f-notes').value,
-            // Guardamos las coordenadas como texto para que Firebase no se enoje
             coords: JSON.stringify(rawCoords) 
         };
         
         db.collection("lotes").doc(fieldId.toString()).set(data)
-            .then(() => {
-                lastLayer = null; closeModal();
-            })
+            .then(() => { lastLayer = null; closeModal(); })
             .catch((error) => console.error("Error al guardar: ", error));
     }
 
@@ -275,7 +269,6 @@
                 list.appendChild(card);
             }
 
-            // Solo dibujamos si coords es un array válido
             if (Array.isArray(f.coords)) {
                 const poly = L.polygon(f.coords, polyStyle).addTo(drawnItems);
                 if (!q || matches) {
@@ -317,7 +310,7 @@
         const blob = new Blob([JSON.stringify(fields)], {type:'application/json'}); 
         const a = document.createElement('a'); 
         a.href = URL.createObjectURL(blob); 
-        a.download = "agro_backup_nube.json"; 
+        a.download = "agro_backup.json"; 
         a.click(); 
     }
 
@@ -327,14 +320,13 @@
             const backupFields = JSON.parse(reader.result); 
             for (const f of backupFields) {
                 let dataToSave = { ...f };
-                // Parche: convertimos el array anidado a texto antes de subirlo
                 if (Array.isArray(dataToSave.coords)) {
                     dataToSave.coords = JSON.stringify(dataToSave.coords);
                 }
                 await db.collection("lotes").doc(f.id.toString()).set(dataToSave);
             }
             alert("¡Backup cargado en la nube correctamente!");
-            document.getElementById('import').value = ''; // Limpiamos el input
+            document.getElementById('import').value = '';
         }; 
         reader.readAsText(input.files[0]); 
     }
@@ -342,11 +334,11 @@
     document.getElementById('list-search').oninput = renderAll;
     window.onload = init;
 </script>
-</body>
-    <script>
+<script>
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('sw.js')
         .then(() => console.log("Service Worker Registrado"));
     }
 </script>
+</body>
 </html>
