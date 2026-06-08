@@ -1,0 +1,16 @@
+{
+  "name": "AgroLease Tracker V10",
+  "short_name": "AgroLease",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#1a2a18",
+  "theme_color": "#2D5A27",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3004/3004814.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
