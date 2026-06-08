@@ -11,74 +11,219 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
     
     <style>
-        :root { --primary: #2D5A27; --bg: #f4f4f4; --danger: #ef4444; --warning: #eab308; --success: #22c55e; --gray: #9ca3af; --blue: #3b82f6; --dimmed: #e5e7eb; }
+        :root {
+            --primary: #2D5A27;
+            --danger: #ef4444;
+            --warning: #eab308;
+            --success: #22c55e;
+            --gray: #9ca3af;
+            --blue: #3b82f6;
+        }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Segoe UI', system-ui, sans-serif; display: flex; height: 100vh; overflow: hidden; background: #1a2a18; }
-        
-        .sidebar { width: 320px; background: white; border-right: 1px solid #ddd; display: flex; flex-direction: column; z-index: 1000; }
+
+        /* ── Layout base (desktop) ── */
+        html, body {
+            width: 100%; height: 100%;
+            overflow: hidden;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: #1a2a18;
+        }
+        body { display: flex; flex-direction: row; }
+
+        /* ── Sidebar ── */
+        .sidebar {
+            width: 320px;
+            min-width: 320px;
+            background: white;
+            border-right: 1px solid #ddd;
+            display: flex;
+            flex-direction: column;
+            z-index: 1100;
+            height: 100%;
+            transition: transform .25s ease;
+        }
+        .sidebar.hidden { transform: translateX(-100%); }
+
         .sb-header { background: var(--primary); color: white; padding: 20px; flex-shrink: 0; }
         .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
         .stat-card { background: rgba(255,255,255,0.15); padding: 10px; border-radius: 8px; }
         .stat-label { font-size: 10px; text-transform: uppercase; opacity: 0.8; }
         .stat-value { font-size: 18px; font-weight: bold; }
 
-        #field-list { flex: 1; overflow-y: auto; padding: 10px; background: #fdfdfd; }
+        #field-list { flex: 1; overflow-y: auto; padding: 10px; background: #fdfdfd; -webkit-overflow-scrolling: touch; }
         .field-card { border: 1px solid #eee; padding: 12px; margin-bottom: 8px; border-radius: 8px; cursor: pointer; background: white; position: relative; }
         .field-card:hover { border-color: var(--primary); }
         .fc-worker { font-weight: bold; font-size: 15px; color: #111; line-height: 1.2; }
         .fc-details { font-size: 11px; color: #666; margin-top: 4px; }
-        .btn-del-card { position: absolute; top: 10px; right: 10px; background: none; border: none; color: #ccc; cursor: pointer; }
-        
-        .map-container { flex: 1; height: 100%; position: relative; display: flex; flex-direction: column; }
-        .search-bar { background: white; padding: 10px; border-bottom: 1px solid #ddd; display: flex; gap: 8px; z-index: 500; }
-        #map { flex: 1; width: 100%; }
+        .btn-del-card { position: absolute; top: 10px; right: 10px; background: none; border: none; color: #ccc; cursor: pointer; font-size: 16px; }
 
-        .legend { position: absolute; bottom: 20px; left: 20px; background: white; padding: 12px; border-radius: 8px; border: 1px solid #ccc; z-index: 1000; font-size: 0.8em; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        /* ── Mapa ── */
+        .map-container {
+            flex: 1;
+            min-width: 0;
+            height: 100%;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+        .search-bar {
+            background: white;
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            z-index: 500;
+            flex-wrap: wrap;
+        }
+        #map {
+            flex: 1;
+            width: 100%;
+            /* Cede el control de gestos táctiles a Leaflet */
+            touch-action: none;
+        }
+
+        /* ── Botón toggle sidebar ── */
+        .toggle-btn {
+            padding: 8px 12px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            cursor: pointer;
+            touch-action: manipulation;
+            flex-shrink: 0;
+            line-height: 1;
+        }
+
+        /* ── Overlay oscuro (mobile) detrás del sidebar ── */
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,.45);
+            z-index: 1050;
+        }
+        .sidebar-overlay.active { display: block; }
+
+        /* ── Leyenda ── */
+        .legend {
+            position: absolute;
+            bottom: 20px;
+            left: 10px;
+            background: white;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            z-index: 1000;
+            font-size: 0.78em;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
         .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-        .color-box { width: 14px; height: 14px; border-radius: 3px; }
+        .color-box { width: 13px; height: 13px; border-radius: 3px; flex-shrink: 0; }
 
-        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 9999; }
-        .modal-box { background: white; padding: 25px; border-radius: 12px; width: 400px; max-height: 90vh; overflow-y: auto; }
+        /* ── Modal ── */
+        .modal-overlay {
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.6);
+            display: none; align-items: center; justify-content: center;
+            z-index: 9999; padding: 12px;
+        }
+        .modal-box {
+            background: white; padding: 22px; border-radius: 12px;
+            width: 420px; max-width: 100%; max-height: 90vh; overflow-y: auto;
+        }
         .form-group { margin-bottom: 12px; }
         .form-group label { display: block; font-size: 11px; font-weight: bold; margin-bottom: 4px; color: #666; text-transform: uppercase; }
         .form-input { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; }
         .check-group { display: flex; align-items: center; gap: 8px; background: #eff6ff; padding: 10px; border-radius: 6px; margin-bottom: 12px; border: 1px solid #dbeafe; }
-        .btn-primary { background: var(--primary); color: white; border: none; padding: 10px; border-radius: 6px; width: 100%; font-weight: bold; cursor: pointer; margin-top: 10px; }
-        .btn-cancel { background: #eee; color: #666; border: none; padding: 10px; border-radius: 6px; width: 100%; cursor: pointer; margin-top: 5px; }
+        .btn-primary { background: var(--primary); color: white; border: none; padding: 10px; border-radius: 6px; width: 100%; font-weight: bold; cursor: pointer; margin-top: 10px; touch-action: manipulation; }
+        .btn-cancel { background: #eee; color: #666; border: none; padding: 10px; border-radius: 6px; width: 100%; cursor: pointer; margin-top: 5px; touch-action: manipulation; }
+
+        /* ── Bloquear pull-to-refresh en Android Chrome ── */
+        html { overscroll-behavior-y: none; }
+        body { overscroll-behavior: none; position: fixed; }
+
+        /* ══════════════════════════════════════════
+           RESPONSIVE MOBILE
+        ══════════════════════════════════════════ */
+        @media (max-width: 768px) {
+            body { flex-direction: column; }
+
+            /* El sidebar se convierte en drawer lateral */
+            .sidebar {
+                position: fixed;
+                left: 0; top: 0; bottom: 0;
+                width: min(88vw, 310px);
+                min-width: unset;
+                transform: translateX(-100%);
+                box-shadow: 3px 0 20px rgba(0,0,0,.3);
+                z-index: 1200;
+            }
+            .sidebar.open { transform: translateX(0); }
+
+            /* El mapa ocupa toda la pantalla */
+            .map-container { width: 100vw; height: 100vh; }
+
+            /* Barra superior más compacta */
+            .search-bar { padding: 8px; gap: 6px; }
+            .search-bar input { flex: 1 1 100%; order: 2; }
+            .toggle-btn { order: 1; }
+            .search-bar button:last-child { order: 3; }
+
+            /* Leyenda más pequeña */
+            .legend { font-size: 0.72em; padding: 8px 10px; max-width: calc(100vw - 20px); }
+        }
+
+        /* Controles de Leaflet más grandes en táctil */
+        @media (max-width: 768px) {
+            .leaflet-control-zoom a,
+            .leaflet-draw-toolbar a {
+                width: 36px !important;
+                height: 36px !important;
+                line-height: 36px !important;
+            }
+        }
     </style>
 </head>
 <body>
 
-<div class="sidebar">
+<!-- Overlay para cerrar sidebar tocando afuera (mobile) -->
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+
+<div class="sidebar" id="sidebar">
     <div class="sb-header">
-        <h3 style="font-size: 16px;">AgroLease Tracker V10</h3>
-        <p style="font-size: 10px; opacity: 0.7;">Análisis de Superficie Trabajada (Nube)</p>
+        <h3 style="font-size:16px;">AgroLease Tracker V10</h3>
+        <p style="font-size:10px;opacity:0.7;">Análisis de Superficie Trabajada (Nube)</p>
         <div class="stat-grid">
             <div class="stat-card">
                 <div class="stat-label">Ha Enfocadas</div>
                 <div id="total-ha" class="stat-value">0</div>
             </div>
-            <div class="stat-card" style="background: rgba(239,68,68,0.2);">
+            <div class="stat-card" style="background:rgba(239,68,68,0.2)">
                 <div class="stat-label" style="color:#fca5a5">Riesgo Vencim.</div>
                 <div id="total-alerts" class="stat-value">0</div>
             </div>
         </div>
     </div>
-    <div style="padding:10px; border-bottom:1px solid #eee;">
+    <div style="padding:10px;border-bottom:1px solid #eee;">
         <input type="text" id="list-search" placeholder="Buscar Productor o Dueño..." class="form-input">
     </div>
     <div id="field-list"></div>
-    <div style="padding:10px; display:flex; gap:5px;">
-        <button onclick="exportData()" style="flex:1; font-size:10px; padding:5px; border-radius:4px; border:1px solid #ccc; cursor:pointer">Bajar Backup</button>
-        <button onclick="document.getElementById('import').click()" style="flex:1; font-size:10px; padding:5px; border-radius:4px; border:1px solid #ccc; background:#eff6ff; cursor:pointer">Subir a Nube</button>
+    <div style="padding:10px;display:flex;gap:5px;">
+        <button onclick="exportData()" style="flex:1;font-size:10px;padding:5px;border-radius:4px;border:1px solid #ccc;cursor:pointer">Bajar Backup</button>
+        <button onclick="document.getElementById('import').click()" style="flex:1;font-size:10px;padding:5px;border-radius:4px;border:1px solid #ccc;background:#eff6ff;cursor:pointer">Subir a Nube</button>
         <input type="file" id="import" style="display:none" accept=".json" onchange="importData(this)">
     </div>
 </div>
 
 <div class="map-container">
     <div class="search-bar">
-        <input type="text" id="loc-search" placeholder="Ir a localidad (Ej: Las Varas)..." style="flex:1; padding:8px; border:1px solid #ccc; border-radius:6px;">
-        <button onclick="buscarLocalidad()" style="padding:8px 15px; background:var(--primary); color:white; border:none; border-radius:6px; cursor:pointer; font-weight:bold;">Ir</button>
+        <!-- Botón toggle: abre/cierra sidebar en mobile, oculta/muestra en desktop -->
+        <button class="toggle-btn" onclick="toggleSidebar()" title="Mostrar/ocultar panel">☰</button>
+        <input type="text" id="loc-search" placeholder="Ir a localidad (Ej: Las Varas)..." style="flex:1;padding:8px;border:1px solid #ccc;border-radius:6px;">
+        <button onclick="buscarLocalidad()" style="padding:8px 14px;background:var(--primary);color:white;border:none;border-radius:6px;cursor:pointer;font-weight:bold;touch-action:manipulation;">Ir</button>
     </div>
     <div id="map"></div>
     <div class="legend">
@@ -95,7 +240,7 @@
         <h4 id="modal-title" style="margin-bottom:15px;">Datos del Lote</h4>
         <div class="check-group">
             <input type="checkbox" id="f-is-own" onchange="toggleOwnField(this.checked)">
-            <label for="f-is-own" style="color:var(--blue); font-weight:bold; font-size:11px; cursor:pointer">¿ES CAMPO PROPIO?</label>
+            <label for="f-is-own" style="color:var(--blue);font-weight:bold;font-size:11px;cursor:pointer">¿ES CAMPO PROPIO?</label>
         </div>
         <div class="form-group" id="prod-group">
             <label>Productor (Quien lo trabaja)</label>
@@ -128,6 +273,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 
 <script>
+    // ── Firebase (tu configuración sin cambios) ───────────────────────────────
     const firebaseConfig = {
       apiKey: "AIzaSyDi70QeV1iJhGg-s4jvvgDGkzY25sk4DMM",
       authDomain: "agrolease-cloud.firebaseapp.com",
@@ -136,18 +282,41 @@
       messagingSenderId: "1028397749370",
       appId: "1:1028397749370:web:e9535daccb3d8dba37d7c3"
     };
-
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
+    // ── Estado ────────────────────────────────────────────────────────────────
     let map, drawnItems, lastLayer, editingId = null;
-    let fields = []; 
-    const colors = { 0: '#9ca3af', 1: '#22c55e', 2: '#eab308', 3: '#ef4444', 4: '#3b82f6' };
+    let fields = [];
+    const colors = { 0:'#9ca3af', 1:'#22c55e', 2:'#eab308', 3:'#ef4444', 4:'#3b82f6' };
 
+    // ── Sidebar toggle ────────────────────────────────────────────────────────
+    function toggleSidebar() {
+        const sb = document.getElementById('sidebar');
+        if (window.innerWidth <= 768) {
+            // Mobile: drawer
+            sb.classList.contains('open') ? closeSidebar() : openSidebar();
+        } else {
+            // Desktop: ocultar/mostrar comprimiendo el mapa
+            sb.classList.toggle('hidden');
+            setTimeout(() => map && map.invalidateSize(), 300);
+        }
+    }
+    function openSidebar() {
+        document.getElementById('sidebar').classList.add('open');
+        document.getElementById('sidebarOverlay').classList.add('active');
+        // No hacemos invalidateSize porque el mapa ya ocupa 100vw en mobile
+    }
+    function closeSidebar() {
+        document.getElementById('sidebar').classList.remove('open');
+        document.getElementById('sidebarOverlay').classList.remove('active');
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
     function calculateStatus(f) {
         if (f.isOwn) return { year: 4, label: 'Propio' };
         if (!f.date) return { year: 0, label: 'Sin Fecha' };
-        const diff = (new Date() - new Date(f.date)) / (1000 * 60 * 60 * 24 * 365.25);
+        const diff = (new Date() - new Date(f.date)) / (1000*60*60*24*365.25);
         if (diff < 1) return { year: 1, label: 'Año 1' };
         if (diff < 2) return { year: 2, label: 'Año 2' };
         return { year: 3, label: 'Año 3' };
@@ -162,91 +331,100 @@
         const q = document.getElementById('loc-search').value;
         if (!q) return;
         try {
-            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
+            const res  = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}`);
             const data = await res.json();
             if (data.length > 0) map.setView([data[0].lat, data[0].lon], 14);
-        } catch (e) { console.error(e); }
+        } catch(e) { console.error(e); }
     }
 
+    // ── Init ──────────────────────────────────────────────────────────────────
     function init() {
         map = L.map('map').setView([-32.714, -62.719], 13);
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}').addTo(map);
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }).addTo(map);
 
         drawnItems = new L.FeatureGroup().addTo(map);
-        new L.Control.Draw({ draw: { polygon: true, rectangle: false, circle: false, marker: false, circlemarker: false, polyline: false } }).addTo(map);
+        new L.Control.Draw({
+            draw: { polygon: true, rectangle: false, circle: false, marker: false, circlemarker: false, polyline: false }
+        }).addTo(map);
 
         map.on(L.Draw.Event.CREATED, (e) => {
             if (lastLayer) map.removeLayer(lastLayer);
-            lastLayer = e.layer; lastLayer.addTo(map);
+            lastLayer = e.layer;
+            lastLayer.addTo(map);
             const area = L.GeometryUtil.geodesicArea(lastLayer.getLatLngs()[0]);
             document.getElementById('f-ha').value = (area / 10000).toFixed(1);
-            editingId = null; openModal();
+            editingId = null;
+            openModal();
         });
 
+        // Escucha en tiempo real desde Firebase
         db.collection("lotes").onSnapshot((querySnapshot) => {
             fields = [];
             querySnapshot.forEach((doc) => {
                 let data = doc.data();
-                if (typeof data.coords === 'string') {
-                    data.coords = JSON.parse(data.coords);
-                }
+                if (typeof data.coords === 'string') data.coords = JSON.parse(data.coords);
                 fields.push(data);
             });
             renderAll();
         });
+
+        setTimeout(() => map.invalidateSize(), 200);
     }
 
-    function openModal() { document.getElementById('modal-overlay').style.display = 'flex'; }
-    function closeModal() { 
-        document.getElementById('modal-overlay').style.display = 'none'; 
-        if(!editingId && lastLayer) map.removeLayer(lastLayer);
+    // ── Modal ─────────────────────────────────────────────────────────────────
+    function openModal()  { document.getElementById('modal-overlay').style.display = 'flex'; }
+    function closeModal() {
+        document.getElementById('modal-overlay').style.display = 'none';
+        if (!editingId && lastLayer) map.removeLayer(lastLayer);
         resetForm();
     }
-
     function resetForm() {
         ['f-owner','f-producer','f-ha','f-date','f-notes'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('f-is-own').checked = false;
         toggleOwnField(false);
     }
 
+    // ── Guardar ───────────────────────────────────────────────────────────────
     function saveField() {
-        const owner = document.getElementById('f-owner').value;
+        const owner    = document.getElementById('f-owner').value;
         const producer = document.getElementById('f-producer').value;
-        const isOwn = document.getElementById('f-is-own').checked;
-        
-        if (!owner) return alert("Ingresá el Propietario.");
+        const isOwn    = document.getElementById('f-is-own').checked;
+        if (!owner)              return alert("Ingresá el Propietario.");
         if (!isOwn && !producer) return alert("Ingresá el Productor.");
 
-        const fieldId = editingId ? editingId : Date.now();
-        let rawCoords = editingId ? fields.find(f => f.id === editingId).coords : lastLayer.getLatLngs()[0].map(ll => [ll.lat, ll.lng]);
+        const fieldId    = editingId ? editingId : Date.now();
+        let rawCoords    = editingId
+            ? fields.find(f => f.id === editingId).coords
+            : lastLayer.getLatLngs()[0].map(ll => [ll.lat, ll.lng]);
 
         const data = {
-            id: fieldId,
-            isOwn: isOwn,
-            owner: owner,
+            id:       fieldId,
+            isOwn,
+            owner,
             producer: isOwn ? owner : producer,
-            ha: parseFloat(document.getElementById('f-ha').value || 0),
-            date: isOwn ? null : document.getElementById('f-date').value,
-            notes: document.getElementById('f-notes').value,
-            coords: JSON.stringify(rawCoords) 
+            ha:       parseFloat(document.getElementById('f-ha').value || 0),
+            date:     isOwn ? null : document.getElementById('f-date').value,
+            notes:    document.getElementById('f-notes').value,
+            coords:   JSON.stringify(rawCoords)
         };
-        
+
         db.collection("lotes").doc(fieldId.toString()).set(data)
             .then(() => { lastLayer = null; closeModal(); })
-            .catch((error) => console.error("Error al guardar: ", error));
+            .catch(err => console.error("Error al guardar:", err));
     }
 
+    // ── Render ────────────────────────────────────────────────────────────────
     function renderAll() {
         drawnItems.clearLayers();
         const list = document.getElementById('field-list');
         list.innerHTML = '';
         let totalHa = 0, alertas = 0;
         const q = document.getElementById('list-search').value.toLowerCase();
-        
+
         fields.forEach(f => {
-            const status = calculateStatus(f);
-            const matches = f.producer.toLowerCase().includes(q) || (f.owner && f.owner.toLowerCase().includes(q));
-            
+            const status  = calculateStatus(f);
+            const matches = (f.producer||'').toLowerCase().includes(q) || (f.owner||'').toLowerCase().includes(q);
+
             let polyStyle = { color: colors[status.year], fillOpacity: 0.5, weight: 2 };
             if (q && !matches) { polyStyle.color = '#e5e7eb'; polyStyle.fillOpacity = 0.1; polyStyle.weight = 1; }
             else if (q && matches) { polyStyle.weight = 4; }
@@ -254,70 +432,81 @@
             if (matches) {
                 totalHa += f.ha;
                 if (status.year === 3) alertas++;
-                
                 const card = document.createElement('div');
                 card.className = 'field-card';
-                const workerLabel = f.isOwn ? f.owner + ' <span style="font-size:10px; color:var(--blue)">(PROPIO)</span>' : f.producer;
-                
+                const workerLabel = f.isOwn
+                    ? `${f.owner} <span style="font-size:10px;color:var(--blue)">(PROPIO)</span>`
+                    : f.producer;
                 card.innerHTML = `
-                    <button class="btn-del-card" onclick="event.stopPropagation(); deleteField(${f.id})">🗑</button>
+                    <button class="btn-del-card" onclick="event.stopPropagation();deleteField(${f.id})">🗑</button>
                     <div class="fc-worker">${workerLabel}</div>
-                    <div class="fc-details">${f.isOwn ? 'Superficie Propia' : 'Dueño: ' + f.owner} · ${f.ha} Ha</div>
-                    <div style="color:${colors[status.year]}; font-size:9px; font-weight:bold; margin-top:5px;">${status.label}</div>
+                    <div class="fc-details">${f.isOwn ? 'Superficie Propia' : 'Dueño: '+f.owner} · ${f.ha} Ha</div>
+                    <div style="color:${colors[status.year]};font-size:9px;font-weight:bold;margin-top:5px;">${status.label}</div>
                 `;
-                card.onclick = () => { map.fitBounds(poly.getBounds()); poly.openPopup(); };
+                card.onclick = () => {
+                    if (Array.isArray(f.coords)) {
+                        map.fitBounds(L.polygon(f.coords).getBounds());
+                    }
+                    // En mobile: cerrar sidebar al tocar un campo
+                    if (window.innerWidth <= 768) closeSidebar();
+                };
                 list.appendChild(card);
             }
 
             if (Array.isArray(f.coords)) {
                 const poly = L.polygon(f.coords, polyStyle).addTo(drawnItems);
                 if (!q || matches) {
-                    const popupTitle = f.isOwn ? f.owner + ' (PROPIO)' : f.producer;
+                    const popupTitle = f.isOwn ? f.owner+' (PROPIO)' : f.producer;
                     poly.bindPopup(`
                         <b style="font-size:14px">${popupTitle}</b><br>
-                        <span style="font-size:11px;color:#666">${f.isOwn ? 'Campo Propio' : 'Dueño: ' + f.owner}</span><br>
+                        <span style="font-size:11px;color:#666">${f.isOwn ? 'Campo Propio' : 'Dueño: '+f.owner}</span><br>
                         Estado: ${status.label}<br><br>
-                        <button onclick="editField(${f.id})" style="padding:4px 8px; cursor:pointer; background:var(--primary); color:white; border:none; border-radius:4px;">Editar</button>
-                        <button onclick="deleteField(${f.id})" style="padding:4px 8px; cursor:pointer; background:var(--danger); color:white; border:none; border-radius:4px;">Borrar</button>
+                        <button onclick="editField(${f.id})" style="padding:4px 8px;cursor:pointer;background:var(--primary);color:white;border:none;border-radius:4px;">Editar</button>
+                        <button onclick="deleteField(${f.id})" style="padding:4px 8px;cursor:pointer;background:var(--danger);color:white;border:none;border-radius:4px;">Borrar</button>
                     `);
                 }
             }
         });
-        document.getElementById('total-ha').innerText = Math.round(totalHa);
+
+        document.getElementById('total-ha').innerText    = Math.round(totalHa);
         document.getElementById('total-alerts').innerText = alertas;
     }
 
+    // ── Editar / Borrar ───────────────────────────────────────────────────────
     function editField(id) {
         const f = fields.find(x => x.id === id);
+        if (!f) return;
         editingId = id;
-        document.getElementById('f-is-own').checked = f.isOwn;
-        document.getElementById('f-owner').value = f.owner || "";
-        document.getElementById('f-producer').value = f.isOwn ? "" : f.producer;
-        document.getElementById('f-ha').value = f.ha;
-        document.getElementById('f-date').value = f.date || "";
-        document.getElementById('f-notes').value = f.notes || "";
-        toggleOwnField(f.isOwn); openModal();
+        document.getElementById('f-is-own').checked    = f.isOwn;
+        document.getElementById('f-owner').value        = f.owner    || '';
+        document.getElementById('f-producer').value     = f.isOwn ? '' : f.producer;
+        document.getElementById('f-ha').value           = f.ha;
+        document.getElementById('f-date').value         = f.date     || '';
+        document.getElementById('f-notes').value        = f.notes    || '';
+        toggleOwnField(f.isOwn);
+        openModal();
     }
 
     function deleteField(id) {
-        if(confirm('¿Borrar lote?')) {
+        if (confirm('¿Borrar lote?')) {
             db.collection("lotes").doc(id.toString()).delete()
-                .catch((error) => console.error("Error al borrar: ", error));
+                .catch(err => console.error("Error al borrar:", err));
         }
     }
 
-    function exportData() { 
-        const blob = new Blob([JSON.stringify(fields)], {type:'application/json'}); 
-        const a = document.createElement('a'); 
-        a.href = URL.createObjectURL(blob); 
-        a.download = "agro_backup.json"; 
-        a.click(); 
+    // ── Backup / Import ───────────────────────────────────────────────────────
+    function exportData() {
+        const blob = new Blob([JSON.stringify(fields)], { type:'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'agro_backup.json';
+        a.click();
     }
 
-    function importData(input) { 
-        const reader = new FileReader(); 
-        reader.onload = async () => { 
-            const backupFields = JSON.parse(reader.result); 
+    function importData(input) {
+        const reader = new FileReader();
+        reader.onload = async () => {
+            const backupFields = JSON.parse(reader.result);
             for (const f of backupFields) {
                 let dataToSave = { ...f };
                 if (Array.isArray(dataToSave.coords)) {
@@ -327,17 +516,30 @@
             }
             alert("¡Backup cargado en la nube correctamente!");
             document.getElementById('import').value = '';
-        }; 
-        reader.readAsText(input.files[0]); 
+        };
+        reader.readAsText(input.files[0]);
     }
+
+    // ── Bloquear pull-to-refresh (Android Chrome / Safari iOS) ───────────────
+    let lastTouchY = 0;
+    document.addEventListener('touchstart', e => { lastTouchY = e.touches[0].clientY; }, { passive: true });
+    document.addEventListener('touchmove', e => {
+        const el = e.target.closest('#field-list, .modal-box');
+        if (!el) { e.preventDefault(); return; }
+        const dy = e.touches[0].clientY - lastTouchY;
+        if ((el.scrollTop === 0 && dy > 0) || (el.scrollTop + el.clientHeight >= el.scrollHeight && dy < 0))
+            e.preventDefault();
+    }, { passive: false });
 
     document.getElementById('list-search').oninput = renderAll;
     window.onload = init;
+    window.addEventListener('resize', () => setTimeout(() => map && map.invalidateSize(), 150));
 </script>
+
 <script>
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('sw.js')
-        .then(() => console.log("Service Worker Registrado"));
+            .then(() => console.log("Service Worker Registrado"));
     }
 </script>
 </body>
