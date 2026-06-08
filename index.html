@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AgroLease Tracker V10 - Cloud</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2D5A27">
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
@@ -341,4 +343,10 @@
     window.onload = init;
 </script>
 </body>
+    <script>
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js')
+        .then(() => console.log("Service Worker Registrado"));
+    }
+</script>
 </html>
