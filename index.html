@@ -68,7 +68,7 @@
     <div id="field-list"></div>
     <div style="padding:10px; display:flex; gap:5px;">
         <button onclick="exportData()" style="flex:1; font-size:10px; padding:5px; border-radius:4px; border:1px solid #ccc; cursor:pointer">Bajar Backup</button>
-        <button onclick="document.getElementById('import').click()" style="flex:1; font-size:10px; padding:5px; border-radius:4px; border:1px solid #ccc; background:#eff6ff; cursor:pointer">Subir Backup</button>
+        <button onclick="document.getElementById('import').click()" style="flex:1; font-size:10px; padding:5px; border-radius:4px; border:1px solid #ccc; background:#eff6ff; cursor:pointer">Subir a Nube</button>
         <input type="file" id="import" style="display:none" onchange="importData(this)">
     </div>
 </div>
@@ -122,12 +122,11 @@
 
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
-
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 
 <script>
-    // Configuración de Firebase (Con TUS datos exactos)
+    // Configuración exacta de tu Firebase
     const firebaseConfig = {
       apiKey: "AIzaSyDi70QeV1iJhGg-s4jvvgDGkzY25sk4DMM",
       authDomain: "agrolease-cloud.firebaseapp.com",
@@ -137,7 +136,6 @@
       appId: "1:1028397749370:web:e9535daccb3d8dba37d7c3"
     };
 
-    // Inicializar Firebase
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
@@ -170,8 +168,8 @@
     }
 
     function init() {
-        // Centrado en tu zona por defecto
-        map = L.map('map').setView([-31.866, -62.700], 13);
+        // Mantiene tus coordenadas correctas
+        map = L.map('map').setView([-32.714, -62.719], 13);
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}').addTo(map);
 
         drawnItems = new L.FeatureGroup().addTo(map);
@@ -185,7 +183,7 @@
             editingId = null; openModal();
         });
 
-        // MAGIA DE FIREBASE: Escuchar cambios en la nube en tiempo real
+        // Sincronización en vivo con Firebase
         db.collection("lotes").onSnapshot((querySnapshot) => {
             fields = [];
             querySnapshot.forEach((doc) => {
@@ -229,11 +227,9 @@
             coords: editingId ? fields.find(f => f.id === editingId).coords : lastLayer.getLatLngs()[0].map(ll => [ll.lat, ll.lng])
         };
         
-        // Guardar en Firebase
         db.collection("lotes").doc(fieldId.toString()).set(data)
             .then(() => {
-                lastLayer = null; 
-                closeModal();
+                lastLayer = null; closeModal();
             })
             .catch((error) => console.error("Error al guardar: ", error));
     }
@@ -300,8 +296,7 @@
     }
 
     function deleteField(id) {
-        if(confirm('¿Seguro que querés borrar este lote?')) {
-            // Borrar de Firebase
+        if(confirm('¿Borrar lote?')) {
             db.collection("lotes").doc(id.toString()).delete()
                 .catch((error) => console.error("Error al borrar: ", error));
         }
@@ -319,7 +314,6 @@
         const reader = new FileReader(); 
         reader.onload = async () => { 
             const backupFields = JSON.parse(reader.result); 
-            // Subir cada lote del backup a Firebase
             for (const f of backupFields) {
                 await db.collection("lotes").doc(f.id.toString()).set(f);
             }
