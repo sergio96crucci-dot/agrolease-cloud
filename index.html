@@ -191,6 +191,32 @@
             overflow: hidden;
         }
 
+        /* ── Pantalla de acceso ── */
+        .login-overlay {
+            position: fixed; inset: 0;
+            background: #1a2a18;
+            display: none;
+            align-items: center; justify-content: center;
+            z-index: 10000; padding: 20px;
+        }
+        .login-overlay.visible { display: flex; }
+        .login-box {
+            background: white;
+            padding: 28px 24px;
+            border-radius: 14px;
+            width: 340px; max-width: 100%;
+            box-shadow: 0 10px 40px rgba(0,0,0,.4);
+        }
+        .login-box h2 { color: var(--primary); font-size: 20px; margin-bottom: 4px; }
+        .login-box p  { font-size: 12px; color: #666; margin-bottom: 18px; }
+        .login-error {
+            display: none;
+            background: #fee2e2; color: #991b1b;
+            padding: 9px 12px; border-radius: 6px;
+            font-size: 12px; margin-bottom: 12px;
+        }
+        .login-error.visible { display: block; }
+
         /* ── Indicador de sin conexión ── */
         .offline-badge {
             display: none;
@@ -280,6 +306,24 @@
 </head>
 <body>
 
+<!-- Pantalla de acceso: la app no carga datos hasta que haya sesión iniciada -->
+<div class="login-overlay" id="login-overlay">
+    <form class="login-box" onsubmit="iniciarSesion(event)">
+        <h2>AgroLease Tracker</h2>
+        <p>Ingresá con tu cuenta para ver los lotes.</p>
+        <div class="login-error" id="login-error"></div>
+        <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="login-email" class="form-input" autocomplete="username" required>
+        </div>
+        <div class="form-group">
+            <label>Contraseña</label>
+            <input type="password" id="login-pass" class="form-input" autocomplete="current-password" required>
+        </div>
+        <button type="submit" id="login-btn" class="btn-primary">Entrar</button>
+    </form>
+</div>
+
 <!-- Overlay para cerrar sidebar tocando afuera (mobile) -->
 <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
 
@@ -305,6 +349,7 @@
     <div style="padding:10px;display:flex;gap:5px;">
         <button onclick="exportData()" style="flex:1;font-size:10px;padding:5px;border-radius:4px;border:1px solid #ccc;cursor:pointer">Bajar Backup</button>
         <button onclick="document.getElementById('import').click()" style="flex:1;font-size:10px;padding:5px;border-radius:4px;border:1px solid #ccc;background:#eff6ff;cursor:pointer">Subir a Nube</button>
+        <button onclick="cerrarSesion()" style="flex:0 0 auto;font-size:10px;padding:5px 8px;border-radius:4px;border:1px solid #fecaca;background:#fef2f2;color:#991b1b;cursor:pointer" title="Cerrar sesión">Salir</button>
         <input type="file" id="import" style="display:none" accept=".json" onchange="importData(this)">
     </div>
 </div>
@@ -370,6 +415,7 @@
 </div>
 
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
@@ -853,6 +899,71 @@
             e.preventDefault();
     }, { passive: false });
 
+    // ── Autenticación ─────────────────────────────────────────────────────────
+    // La sesión queda guardada en el dispositivo (persistencia LOCAL), así que
+    // solo hay que ingresar la primera vez —también funciona sin señal.
+    let appIniciada = false;
+
+    function mostrarErrorLogin(msg) {
+        const el = document.getElementById('login-error');
+        el.textContent = msg;
+        el.classList.add('visible');
+    }
+
+    async function iniciarSesion(ev) {
+        ev.preventDefault();
+        const btn   = document.getElementById('login-btn');
+        const email = document.getElementById('login-email').value.trim();
+        const pass  = document.getElementById('login-pass').value;
+
+        document.getElementById('login-error').classList.remove('visible');
+        btn.disabled = true;
+        btn.textContent = 'Entrando…';
+
+        try {
+            await firebase.auth().signInWithEmailAndPassword(email, pass);
+            // onAuthStateChanged se encarga de ocultar la pantalla y arrancar la app.
+        } catch (err) {
+            const msgs = {
+                'auth/invalid-email':                'El email no es válido.',
+                'auth/user-not-found':               'No existe una cuenta con ese email.',
+                'auth/wrong-password':               'Contraseña incorrecta.',
+                'auth/invalid-credential':           'Email o contraseña incorrectos.',
+                'auth/invalid-login-credentials':    'Email o contraseña incorrectos.',
+                'auth/too-many-requests':            'Demasiados intentos. Esperá unos minutos.',
+                'auth/network-request-failed':       'Sin conexión. Necesitás señal para el primer ingreso.',
+                'auth/operation-not-allowed':        'Falta habilitar el acceso por Email/Contraseña en la consola de Firebase.',
+                'auth/configuration-not-found':      'Falta activar Authentication en la consola de Firebase (Build → Authentication → Comenzar).'
+            };
+            // Firebase a veces devuelve el error crudo del backend en vez de un código.
+            const crudo = (err.message || '');
+            if (!msgs[err.code] && crudo.includes('CONFIGURATION_NOT_FOUND')) {
+                mostrarErrorLogin(msgs['auth/configuration-not-found']);
+            } else {
+                mostrarErrorLogin(msgs[err.code] || ('No se pudo entrar: ' + (err.code || err.message)));
+            }
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Entrar';
+        }
+    }
+
+    function cerrarSesion() {
+        if (!confirm('¿Cerrar sesión?')) return;
+        firebase.auth().signOut().then(() => location.reload());
+    }
+
+    firebase.auth().onAuthStateChanged(user => {
+        const overlay = document.getElementById('login-overlay');
+        if (user) {
+            overlay.classList.remove('visible');
+            document.getElementById('login-pass').value = '';
+            if (!appIniciada) { appIniciada = true; init(); }
+        } else {
+            overlay.classList.add('visible');
+        }
+    });
+
     // ── Estado de conexión ────────────────────────────────────────────────────
     function actualizarEstadoConexion() {
         document.getElementById('offline-badge')
@@ -867,7 +978,7 @@
         clearTimeout(searchDebounce);
         searchDebounce = setTimeout(renderAll, 200);
     };
-    window.onload = init;
+    // init() ya no se llama directo: lo dispara onAuthStateChanged al haber sesión.
     window.addEventListener('resize', () => setTimeout(() => map && map.invalidateSize(), 150));
 </script>
 
