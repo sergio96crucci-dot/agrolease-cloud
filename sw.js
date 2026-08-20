@@ -10,7 +10,7 @@
 //                             caché offline vía enablePersistence()).
 // ══════════════════════════════════════════════════════════════════════════
 
-const VERSION     = 'v4';
+const VERSION     = 'v5';   // subir al cambiar los íconos, si no queda el viejo cacheado
 const SHELL_CACHE = `agrolease-shell-${VERSION}`;
 const TILE_CACHE  = `agrolease-tiles-${VERSION}`;
 const MAX_TILES   = 800;   // ~40-60 MB de imágenes satelitales

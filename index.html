@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AgroLease Tracker V10 - Cloud</title>
     <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+    <link rel="apple-touch-icon" href="icon-192.png">
     <meta name="theme-color" content="#2D5A27">
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -780,6 +782,14 @@
         isTracking ? stopTracking() : startTracking();
     }
 
+    // Cada vez que vos elegís mirar otro punto del mapa cortamos el seguimiento;
+    // si no, la siguiente lectura del GPS te devuelve a tu posición.
+    function pausarSeguimientoPorNavegacion() {
+        if (!isTracking) return;
+        stopTracking();
+        showGpsWarning('Seguimiento pausado · tocá 🎯 Seguir para reactivarlo');
+    }
+
     function onLocationFound(e) {
         const { lat, lng } = e.latlng;
         const radius = e.accuracy;
@@ -987,6 +997,7 @@
             el.querySelector('.venc-nombre').textContent =
                 o.f.producer + (o.f.owner ? '  ·  Dueño: ' + o.f.owner : '');
             el.onclick = () => {
+                pausarSeguimientoPorNavegacion();
                 if (Array.isArray(o.f.coords)) map.fitBounds(L.polygon(o.f.coords).getBounds());
                 cerrarPanelVencimientos();
             };
@@ -1058,6 +1069,7 @@
         const p = s.properties;
         document.getElementById('loc-search').value = p.name || '';
         cerrarSugerencias();
+        pausarSeguimientoPorNavegacion();
 
         // extent viene como [oeste, norte, este, sur] cuando el lugar tiene superficie.
         if (p.extent && p.extent.length === 4) {
@@ -1152,6 +1164,10 @@
 
         map.on('locationfound', onLocationFound);
         map.on('locationerror', onLocationError);
+
+        // 'dragstart' solo lo dispara el usuario al arrastrar; los movimientos
+        // automáticos (panTo / flyTo del GPS) no lo activan.
+        map.on('dragstart', pausarSeguimientoPorNavegacion);
 
         // Arranque automático: pide permiso GPS y activa el seguimiento en vivo.
         startTracking();
@@ -1316,6 +1332,7 @@
                     <div style="color:${colors[status.year]};font-size:9px;font-weight:bold;margin-top:5px;">${status.label}</div>
                 `;
                 card.onclick = () => {
+                    pausarSeguimientoPorNavegacion();
                     if (Array.isArray(f.coords)) map.fitBounds(L.polygon(f.coords).getBounds());
                     // En mobile: cerrar sidebar al tocar un campo
                     if (window.innerWidth <= 768) closeSidebar();
