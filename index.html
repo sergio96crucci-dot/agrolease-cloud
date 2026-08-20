@@ -290,12 +290,6 @@
     <div class="search-bar">
         <!-- Botón toggle: abre/cierra sidebar en mobile, oculta/muestra en desktop -->
         <button class="toggle-btn" onclick="toggleSidebar()" title="Mostrar/ocultar panel">☰</button>
-        <!-- Botón GPS -->
-        <button id="gps-btn" onclick="irAMiUbicacion()"
-            style="padding:8px 12px;background:#1d4ed8;color:white;border:none;border-radius:8px;cursor:pointer;font-weight:bold;touch-action:manipulation;white-space:nowrap;flex-shrink:0;"
-            title="Ir a mi ubicación">
-            📍 Ubicación
-        </button>
         <button id="track-btn" onclick="toggleTracking()"
             style="padding:8px 12px;background:var(--success);color:white;border:none;border-radius:8px;cursor:pointer;font-weight:bold;touch-action:manipulation;white-space:nowrap;flex-shrink:0;"
             title="Activar/desactivar seguimiento en vivo">
@@ -432,9 +426,6 @@
         document.getElementById('date-group').style.display = isOwn ? 'none' : 'block';
     }
 
-    // ── GPS: ir a ubicación actual (fix único) ────────────────────────────────
-    let userMarker = null, userCircle = null;
-
     // ── GPS: seguimiento en vivo (live tracking, estilo Google Maps) ─────────
     let isTracking = false;
     let liveMarker = null, liveCircle = null;
@@ -511,7 +502,8 @@
 
         if (isTracking) {
             if (firstLocateFix) {
-                map.setView([lat, lng], Math.max(map.getZoom(), 16));
+                // Primer fix del GPS al arrancar: la cámara "cae" directo sobre la posición real.
+                map.flyTo([lat, lng], 17);
                 firstLocateFix = false;
             } else {
                 map.panTo([lat, lng]);
@@ -529,66 +521,6 @@
             3: '⚠️ Tardando en obtener la posición. Buscando señal…'
         };
         showGpsWarning(msgs[e.code] || '⚠️ No se pudo obtener tu ubicación.');
-    }
-
-    function irAMiUbicacion() {
-        const btn = document.getElementById('gps-btn');
-
-        if (!navigator.geolocation) {
-            alert('Tu navegador no soporta geolocalización.');
-            return;
-        }
-
-        // Feedback visual inmediato
-        btn.textContent = '⏳ Buscando...';
-        btn.disabled = true;
-
-        const exito = (pos) => {
-            const lat = pos.coords.latitude;
-            const lng = pos.coords.longitude;
-            const precision = pos.coords.accuracy;
-
-            map.setView([lat, lng], 16);
-
-            // Quitar marcadores anteriores
-            if (userMarker) map.removeLayer(userMarker);
-            if (userCircle) map.removeLayer(userCircle);
-
-            // Marcador puntual
-            userMarker = L.marker([lat, lng])
-                .addTo(map)
-                .bindPopup(`📍 Estás aquí<br><small>Precisión: ±${Math.round(precision)} m</small>`)
-                .openPopup();
-
-            // Círculo de precisión
-            userCircle = L.circle([lat, lng], {
-                radius: precision,
-                color: '#1d4ed8',
-                fillColor: '#3b82f6',
-                fillOpacity: 0.15,
-                weight: 1.5
-            }).addTo(map);
-
-            btn.textContent = '📍 Ubicación';
-            btn.disabled = false;
-        };
-
-        const error = (err) => {
-            btn.textContent = '📍 Ubicación';
-            btn.disabled = false;
-            const msgs = {
-                1: 'Permiso denegado. Habilitá la ubicación en ajustes del navegador.',
-                2: 'No se pudo obtener la posición. Verificá el GPS.',
-                3: 'Tiempo agotado. Intentá de nuevo.'
-            };
-            alert('📍 ' + (msgs[err.code] || err.message));
-        };
-
-        navigator.geolocation.getCurrentPosition(exito, error, {
-            enableHighAccuracy: true,
-            timeout: 15000,
-            maximumAge: 0
-        });
     }
 
     async function buscarLocalidad() {
