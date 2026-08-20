@@ -40,9 +40,11 @@
             flex-direction: column;
             z-index: 1100;
             height: 100%;
-            transition: transform .25s ease;
+            transition: margin-left .25s ease, transform .25s ease;
         }
-        .sidebar.hidden { transform: translateX(-100%); }
+        /* En escritorio se corre con margin negativo (no con transform) para que
+           el mapa recupere el espacio en vez de quedar una franja en blanco. */
+        .sidebar.hidden { margin-left: -320px; }
 
         .sb-header { background: var(--primary); color: white; padding: 20px; flex-shrink: 0; }
         .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
@@ -83,19 +85,30 @@
             touch-action: none;
         }
 
-        /* ── Botón toggle sidebar ── */
-        .toggle-btn {
-            padding: 8px 12px;
+        /* ── Flecha lateral que despliega el panel ── */
+        .sidebar-handle {
+            position: fixed;
+            left: 320px;                /* pegada al borde del panel abierto */
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 1250;
+            width: 26px; height: 70px;
             background: var(--primary);
             color: white;
             border: none;
-            border-radius: 8px;
-            font-size: 18px;
+            border-radius: 0 10px 10px 0;
+            box-shadow: 2px 0 10px rgba(0,0,0,.35);
             cursor: pointer;
             touch-action: manipulation;
-            flex-shrink: 0;
+            font-size: 16px;
             line-height: 1;
+            padding: 0;
+            display: flex; align-items: center; justify-content: center;
+            transition: left .25s ease;
         }
+        .sidebar-handle:active { filter: brightness(1.2); }
+        /* Panel cerrado: la flecha vuelve al borde de la pantalla */
+        body.sb-cerrado .sidebar-handle { left: 0; }
 
         /* ── Overlay oscuro (mobile) detrás del sidebar ── */
         .sidebar-overlay {
@@ -170,6 +183,36 @@
         }
         .btn-add-field:active { transform: scale(0.96); }
         .btn-add-field.drawing { background: var(--danger); }
+        .btn-add-field.oculto  { display: none; }
+
+        /* ── Barra de edición de forma del lote ── */
+        .edit-shape-bar {
+            display: none;
+            position: absolute;
+            bottom: 24px; left: 50%;
+            transform: translateX(-50%);
+            z-index: 1002;
+            background: white;
+            border-radius: 30px;
+            box-shadow: 0 4px 14px rgba(0,0,0,.4);
+            padding: 10px 12px;
+            gap: 8px;
+            align-items: center;
+            max-width: calc(100vw - 24px);
+        }
+        .edit-shape-bar.visible { display: flex; }
+        .edit-shape-bar .titulo {
+            font-size: 11px; color: #555; font-weight: bold;
+            padding: 0 6px; white-space: nowrap;
+            overflow: hidden; text-overflow: ellipsis; max-width: 34vw;
+        }
+        .edit-shape-bar button {
+            border: none; border-radius: 20px;
+            padding: 11px 16px; font-size: 13px; font-weight: bold;
+            cursor: pointer; touch-action: manipulation; white-space: nowrap;
+        }
+        .btn-shape-save   { background: var(--primary); color: white; }
+        .btn-shape-cancel { background: #eee; color: #555; }
 
         /* ── Aviso discreto de estado GPS ── */
         .gps-warning {
@@ -281,8 +324,11 @@
             /* Barra superior más compacta */
             .search-bar { padding: 8px; gap: 6px; }
             .search-bar input { flex: 1 1 100%; order: 2; }
-            .toggle-btn { order: 1; }
             .search-bar button:last-child { order: 3; }
+
+            /* La flecha acompaña al ancho del drawer */
+            .sidebar-handle { left: min(88vw, 310px); }
+            body.sb-cerrado .sidebar-handle { left: 0; }
 
             /* Leyenda más pequeña */
             .legend { font-size: 0.72em; padding: 8px 10px; max-width: calc(100vw - 20px); }
@@ -327,6 +373,9 @@
 <!-- Overlay para cerrar sidebar tocando afuera (mobile) -->
 <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
 
+<!-- Flecha al medio del borde izquierdo: despliega/repliega el panel -->
+<button class="sidebar-handle" id="sidebar-handle" onclick="toggleSidebar()" title="Mostrar/ocultar panel">❮</button>
+
 <div class="sidebar" id="sidebar">
     <div class="sb-header">
         <h3 style="font-size:16px;">AgroLease Tracker V10</h3>
@@ -356,8 +405,6 @@
 
 <div class="map-container">
     <div class="search-bar">
-        <!-- Botón toggle: abre/cierra sidebar en mobile, oculta/muestra en desktop -->
-        <button class="toggle-btn" onclick="toggleSidebar()" title="Mostrar/ocultar panel">☰</button>
         <button id="track-btn" onclick="toggleTracking()"
             style="padding:8px 12px;background:var(--success);color:white;border:none;border-radius:8px;cursor:pointer;font-weight:bold;touch-action:manipulation;white-space:nowrap;flex-shrink:0;"
             title="Activar/desactivar seguimiento en vivo">
@@ -372,6 +419,12 @@
     <button id="add-field-btn" class="btn-add-field" onclick="toggleAddField()" title="Dibujar un nuevo lote">
         ✏️ Añadir campo
     </button>
+    <!-- Aparece al editar la forma de un lote: arrastrás los vértices y confirmás -->
+    <div id="edit-shape-bar" class="edit-shape-bar">
+        <span class="titulo" id="edit-shape-title">Editando forma</span>
+        <button class="btn-shape-save"   onclick="guardarForma()">✓ Guardar</button>
+        <button class="btn-shape-cancel" onclick="cancelarForma()">✕ Cancelar</button>
+    </div>
     <div class="legend">
         <b>Estado de Gestión</b>
         <div class="legend-item"><div class="color-box" style="background:var(--blue)"></div> Propio</div>
@@ -449,27 +502,45 @@
     let fields = [];
     const colors = { 0:'#9ca3af', 1:'#22c55e', 2:'#eab308', 3:'#ef4444', 4:'#3b82f6' };
 
-    // ── Sidebar toggle ────────────────────────────────────────────────────────
-    function toggleSidebar() {
-        const sb = document.getElementById('sidebar');
-        if (window.innerWidth <= 768) {
-            // Mobile: drawer
-            sb.classList.contains('open') ? closeSidebar() : openSidebar();
-        } else {
-            // Desktop: ocultar/mostrar comprimiendo el mapa
-            sb.classList.toggle('hidden');
-            setTimeout(() => map && map.invalidateSize(), 300);
-        }
+    // ── Niveles de acercamiento ───────────────────────────────────────────────
+    // Subí el número para acercar más, bajalo para alejar (cada punto es el doble).
+    const ZOOM_INICIAL   = 14;   // lo que se ve al abrir, antes de que enganche el GPS
+    const ZOOM_LOTE      = 15;   // mínimo garantizado al tocar un lote de la lista
+    const ZOOM_LOCALIDAD = 15;   // al buscar un pueblo con el botón "Ir"
+    const ZOOM_GPS       = 17;   // al enganchar tu posición
+
+    // ── Panel lateral ─────────────────────────────────────────────────────────
+    // Un único estado (body.sb-cerrado) que se traduce distinto en cada tamaño:
+    // en escritorio el panel comprime el mapa, en celular es un drawer encima.
+    function aplicarEstadoSidebar() {
+        const cerrado = document.body.classList.contains('sb-cerrado');
+        const movil   = window.innerWidth <= 768;
+
+        document.getElementById('sidebar').classList.toggle('hidden', !movil && cerrado);
+        document.getElementById('sidebar').classList.toggle('open',    movil && !cerrado);
+        document.getElementById('sidebarOverlay').classList.toggle('active', movil && !cerrado);
+        document.getElementById('sidebar-handle').innerHTML = cerrado ? '❯' : '❮';
+
+        // Solo en escritorio cambia el tamaño real del mapa.
+        if (!movil) setTimeout(() => map && map.invalidateSize(), 300);
     }
-    function openSidebar() {
-        document.getElementById('sidebar').classList.add('open');
-        document.getElementById('sidebarOverlay').classList.add('active');
-        // No hacemos invalidateSize porque el mapa ya ocupa 100vw en mobile
+
+    function toggleSidebar() {
+        document.body.classList.toggle('sb-cerrado');
+        aplicarEstadoSidebar();
     }
     function closeSidebar() {
-        document.getElementById('sidebar').classList.remove('open');
-        document.getElementById('sidebarOverlay').classList.remove('active');
+        document.body.classList.add('sb-cerrado');
+        aplicarEstadoSidebar();
     }
+    function openSidebar() {
+        document.body.classList.remove('sb-cerrado');
+        aplicarEstadoSidebar();
+    }
+
+    // Arranque: en celular el panel empieza replegado; en escritorio, desplegado.
+    if (window.innerWidth <= 768) document.body.classList.add('sb-cerrado');
+    aplicarEstadoSidebar();
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     function calculateStatus(f) {
@@ -484,6 +555,7 @@
     // ── Botón flotante "Añadir campo" → activa el dibujo de polígono ────────────
     function toggleAddField() {
         const btn = document.getElementById('add-field-btn');
+        if (formaEnEdicion) return;   // primero hay que cerrar la edición en curso
 
         if (polygonDrawHandler) {
             // Ya está dibujando: el botón actúa como "Cancelar".
@@ -500,6 +572,75 @@
         polygonDrawHandler.enable();
         btn.classList.add('drawing');
         btn.innerHTML = '✕ Cancelar';
+    }
+
+    // Encuadra el lote, pero sin alejarse más de ZOOM_LOTE: en los campos muy
+    // grandes preferimos ver el detalle aunque no entre el polígono completo.
+    function irAlLote(coords) {
+        const bounds = L.polygon(coords).getBounds();
+        if (map.getBoundsZoom(bounds) < ZOOM_LOTE) map.setView(bounds.getCenter(), ZOOM_LOTE);
+        else                                       map.fitBounds(bounds);
+    }
+
+    // ── Editar la forma (los vértices) de un lote ya guardado ──────────────────
+    let formaEnEdicion = null;   // { layer, id, coordsOriginales }
+
+    function editarForma(id) {
+        if (formaEnEdicion) return;                       // ya hay una edición en curso
+        if (polygonDrawHandler) toggleAddField();         // salimos del modo dibujo
+
+        const f = fields.find(x => x.id === id);
+        if (!f || !Array.isArray(f.coords)) return;
+
+        let capa = null;
+        drawnItems.eachLayer(l => { if (l._loteId === id) capa = l; });
+        if (!capa) return alert("No se encontró el polígono de ese lote.");
+
+        map.closePopup();
+        formaEnEdicion = { layer: capa, id, coordsOriginales: f.coords.map(c => [c[0], c[1]]) };
+        capa.editing.enable();
+
+        document.getElementById('edit-shape-title').textContent = f.isOwn ? f.owner : f.producer;
+        document.getElementById('edit-shape-bar').classList.add('visible');
+        document.getElementById('add-field-btn').classList.add('oculto');
+        if (window.innerWidth <= 768) closeSidebar();
+    }
+
+    function terminarEdicionForma() {
+        if (!formaEnEdicion) return;
+        formaEnEdicion.layer.editing.disable();
+        formaEnEdicion = null;
+        document.getElementById('edit-shape-bar').classList.remove('visible');
+        document.getElementById('add-field-btn').classList.remove('oculto');
+    }
+
+    function guardarForma() {
+        if (!formaEnEdicion) return;
+        const { layer, id } = formaEnEdicion;
+
+        const latlngs = layer.getLatLngs()[0];
+        if (latlngs.length < 3) return alert("El lote necesita al menos 3 vértices.");
+
+        const coords = latlngs.map(ll => [ll.lat, ll.lng]);
+        const ha     = +(L.GeometryUtil.geodesicArea(latlngs) / 10000).toFixed(1);
+
+        terminarEdicionForma();   // libera el bloqueo de renderAll antes de escribir
+
+        db.collection("lotes").doc(id.toString())
+          .update({ coords: JSON.stringify(coords), ha })
+          .catch(err => {
+              console.error("Error al guardar la forma:", err);
+              alert("❌ No se pudo guardar la forma: " + err.message);
+              renderAll();        // volvemos a dibujar desde los datos buenos
+          });
+    }
+
+    function cancelarForma() {
+        if (!formaEnEdicion) return;
+        const { layer, coordsOriginales } = formaEnEdicion;
+        layer.setLatLngs(coordsOriginales);   // descartamos los vértices movidos
+        terminarEdicionForma();
+        renderAll();
     }
 
     function toggleOwnField(isOwn) {
@@ -584,7 +725,7 @@
         if (isTracking) {
             if (firstLocateFix) {
                 // Primer fix del GPS al arrancar: la cámara "cae" directo sobre la posición real.
-                map.flyTo([lat, lng], 17);
+                map.flyTo([lat, lng], ZOOM_GPS);
                 firstLocateFix = false;
             } else {
                 map.panTo([lat, lng]);
@@ -610,13 +751,14 @@
         try {
             const res  = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}`);
             const data = await res.json();
-            if (data.length > 0) map.setView([data[0].lat, data[0].lon], 14);
+            if (data.length > 0) map.setView([data[0].lat, data[0].lon], ZOOM_LOCALIDAD);
+            else alert('No se encontró esa localidad.');
         } catch(e) { console.error(e); }
     }
 
     // ── Init ──────────────────────────────────────────────────────────────────
     function init() {
-        map = L.map('map', { zoomControl: false }).setView([-32.714, -62.719], 13);
+        map = L.map('map', { zoomControl: false }).setView([-32.714, -62.719], ZOOM_INICIAL);
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }).addTo(map);
 
         drawnItems = new L.FeatureGroup().addTo(map);
@@ -659,15 +801,25 @@
         });
 
         // Escucha en tiempo real desde Firebase
-        db.collection("lotes").onSnapshot((querySnapshot) => {
-            fields = [];
-            querySnapshot.forEach((doc) => {
-                let data = doc.data();
-                if (typeof data.coords === 'string') data.coords = JSON.parse(data.coords);
-                fields.push(data);
-            });
-            renderAll();
-        });
+        db.collection("lotes").onSnapshot(
+            (querySnapshot) => {
+                fields = [];
+                querySnapshot.forEach((doc) => {
+                    let data = doc.data();
+                    if (typeof data.coords === 'string') data.coords = JSON.parse(data.coords);
+                    fields.push(data);
+                });
+                renderAll();
+            },
+            (err) => {
+                // Sin esto el rechazo queda como error suelto en consola y la app
+                // aparenta estar cargando para siempre.
+                console.error("Error al leer los lotes:", err);
+                showGpsWarning(err.code === 'permission-denied'
+                    ? '⚠️ Sin permisos para leer los lotes. Cerrá sesión y volvé a entrar.'
+                    : '⚠️ No se pudieron cargar los lotes: ' + err.code);
+            }
+        );
 
         actualizarEstadoConexion();
         setTimeout(() => map.invalidateSize(), 200);
@@ -750,6 +902,10 @@
 
     // ── Render ────────────────────────────────────────────────────────────────
     function renderAll() {
+        // Mientras se editan los vértices de un lote no reconstruimos las capas:
+        // clearLayers() destruiría el polígono que está en edición.
+        if (formaEnEdicion) return;
+
         drawnItems.clearLayers();
         const list = document.getElementById('field-list');
         list.innerHTML = '';
@@ -779,9 +935,7 @@
                     <div style="color:${colors[status.year]};font-size:9px;font-weight:bold;margin-top:5px;">${status.label}</div>
                 `;
                 card.onclick = () => {
-                    if (Array.isArray(f.coords)) {
-                        map.fitBounds(L.polygon(f.coords).getBounds());
-                    }
+                    if (Array.isArray(f.coords)) irAlLote(f.coords);
                     // En mobile: cerrar sidebar al tocar un campo
                     if (window.innerWidth <= 768) closeSidebar();
                 };
@@ -790,14 +944,16 @@
 
             if (Array.isArray(f.coords)) {
                 const poly = L.polygon(f.coords, polyStyle).addTo(drawnItems);
+                poly._loteId = f.id;   // para poder ubicar la capa al editar la forma
                 if (!q || matches) {
                     const popupTitle = f.isOwn ? f.owner+' (PROPIO)' : f.producer;
                     poly.bindPopup(`
                         <b style="font-size:14px">${popupTitle}</b><br>
                         <span style="font-size:11px;color:#666">${f.isOwn ? 'Campo Propio' : 'Dueño: '+f.owner}</span><br>
-                        Estado: ${status.label}<br><br>
-                        <button onclick="editField(${f.id})" style="padding:4px 8px;cursor:pointer;background:var(--primary);color:white;border:none;border-radius:4px;">Editar</button>
-                        <button onclick="deleteField(${f.id})" style="padding:4px 8px;cursor:pointer;background:var(--danger);color:white;border:none;border-radius:4px;">Borrar</button>
+                        Estado: ${status.label} · ${f.ha} Ha<br><br>
+                        <button onclick="editField(${f.id})" style="padding:5px 9px;cursor:pointer;background:var(--primary);color:white;border:none;border-radius:4px;">Editar datos</button>
+                        <button onclick="editarForma(${f.id})" style="padding:5px 9px;cursor:pointer;background:#1d4ed8;color:white;border:none;border-radius:4px;">Editar forma</button>
+                        <button onclick="deleteField(${f.id})" style="padding:5px 9px;cursor:pointer;background:var(--danger);color:white;border:none;border-radius:4px;">Borrar</button>
                     `);
                 }
             }
@@ -979,7 +1135,10 @@
         searchDebounce = setTimeout(renderAll, 200);
     };
     // init() ya no se llama directo: lo dispara onAuthStateChanged al haber sesión.
-    window.addEventListener('resize', () => setTimeout(() => map && map.invalidateSize(), 150));
+    window.addEventListener('resize', () => {
+        aplicarEstadoSidebar();   // el panel se comporta distinto según el ancho
+        setTimeout(() => map && map.invalidateSize(), 150);
+    });
 </script>
 
 <script>
