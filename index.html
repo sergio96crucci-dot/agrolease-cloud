@@ -147,6 +147,30 @@
             100% { transform: scale(3.2); opacity: 0; }
         }
 
+        /* ── Botón flotante "Añadir campo" (reemplaza la toolbar de dibujo por defecto) ── */
+        .btn-add-field {
+            position: absolute;
+            bottom: 24px;
+            right: 16px;
+            z-index: 1001;
+            background: #2D5A27;
+            color: white;
+            border: none;
+            border-radius: 30px;
+            padding: 16px 24px;
+            font-size: 15px;
+            font-weight: bold;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.35);
+            cursor: pointer;
+            touch-action: manipulation;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
+        }
+        .btn-add-field:active { transform: scale(0.96); }
+        .btn-add-field.drawing { background: var(--danger); }
+
         /* ── Aviso discreto de estado GPS ── */
         .gps-warning {
             display: none;
@@ -282,6 +306,9 @@
     </div>
     <div id="map"></div>
     <div id="gps-warning" class="gps-warning"></div>
+    <button id="add-field-btn" class="btn-add-field" onclick="toggleAddField()" title="Dibujar un nuevo lote">
+        ✏️ Añadir campo
+    </button>
     <div class="legend">
         <b>Estado de Gestión</b>
         <div class="legend-item"><div class="color-box" style="background:var(--blue)"></div> Propio</div>
@@ -343,6 +370,7 @@
 
     // ── Estado ────────────────────────────────────────────────────────────────
     let map, drawnItems, lastLayer, editingId = null;
+    let drawControl, polygonDrawHandler = null;
     let fields = [];
     const colors = { 0:'#9ca3af', 1:'#22c55e', 2:'#eab308', 3:'#ef4444', 4:'#3b82f6' };
 
@@ -376,6 +404,27 @@
         if (diff < 1) return { year: 1, label: 'Año 1' };
         if (diff < 2) return { year: 2, label: 'Año 2' };
         return { year: 3, label: 'Año 3' };
+    }
+
+    // ── Botón flotante "Añadir campo" → activa el dibujo de polígono ────────────
+    function toggleAddField() {
+        const btn = document.getElementById('add-field-btn');
+
+        if (polygonDrawHandler) {
+            // Ya está dibujando: el botón actúa como "Cancelar".
+            polygonDrawHandler.disable();
+            polygonDrawHandler = null;
+            btn.classList.remove('drawing');
+            btn.innerHTML = '✏️ Añadir campo';
+            return;
+        }
+
+        if (window.innerWidth <= 768) closeSidebar();
+
+        polygonDrawHandler = new L.Draw.Polygon(map, drawControl.options.draw.polygon);
+        polygonDrawHandler.enable();
+        btn.classList.add('drawing');
+        btn.innerHTML = '✕ Cancelar';
     }
 
     function toggleOwnField(isOwn) {
@@ -554,13 +603,19 @@
 
     // ── Init ──────────────────────────────────────────────────────────────────
     function init() {
-        map = L.map('map').setView([-32.714, -62.719], 13);
+        map = L.map('map', { zoomControl: false }).setView([-32.714, -62.719], 13);
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }).addTo(map);
 
         drawnItems = new L.FeatureGroup().addTo(map);
-        new L.Control.Draw({
-            draw: { polygon: true, rectangle: false, circle: false, marker: false, circlemarker: false, polyline: false }
-        }).addTo(map);
+
+        // Instanciamos el control de dibujo solo para reutilizar sus opciones de polígono;
+        // NO se agrega al mapa (.addTo) para que no muestre su toolbar por defecto.
+        drawControl = new L.Control.Draw({
+            draw: {
+                polygon: { allowIntersection: false, showArea: true },
+                rectangle: false, circle: false, marker: false, circlemarker: false, polyline: false
+            }
+        });
 
         map.on('locationfound', onLocationFound);
         map.on('locationerror', onLocationError);
@@ -569,6 +624,10 @@
         startTracking();
 
         map.on(L.Draw.Event.CREATED, (e) => {
+            polygonDrawHandler = null;
+            document.getElementById('add-field-btn').classList.remove('drawing');
+            document.getElementById('add-field-btn').innerHTML = '✏️ Añadir campo';
+
             if (lastLayer) map.removeLayer(lastLayer);
             lastLayer = e.layer;
             lastLayer.addTo(map);
@@ -576,6 +635,14 @@
             document.getElementById('f-ha').value = (area / 10000).toFixed(1);
             editingId = null;
             openModal();
+        });
+
+        // Si el usuario cancela el dibujo (Esc / click derecho) sin terminar el polígono,
+        // dejamos el botón "Añadir campo" en su estado normal.
+        map.on(L.Draw.Event.DRAWSTOP, () => {
+            polygonDrawHandler = null;
+            document.getElementById('add-field-btn').classList.remove('drawing');
+            document.getElementById('add-field-btn').innerHTML = '✏️ Añadir campo';
         });
 
         // Escucha en tiempo real desde Firebase
