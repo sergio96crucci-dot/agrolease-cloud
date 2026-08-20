@@ -260,6 +260,89 @@
         }
         .login-error.visible { display: block; }
 
+        /* ── Campana de vencimientos ── */
+        .bell-btn {
+            position: relative;
+            padding: 8px 12px;
+            background: #b45309; color: white;
+            border: none; border-radius: 8px;
+            font-size: 15px; cursor: pointer;
+            touch-action: manipulation; flex-shrink: 0; line-height: 1;
+        }
+        .bell-btn.apagada { background: #6b7280; }
+        .bell-badge {
+            position: absolute; top: -6px; right: -6px;
+            background: var(--danger); color: white;
+            border-radius: 10px; min-width: 18px; height: 18px;
+            font-size: 10px; font-weight: bold;
+            display: none; align-items: center; justify-content: center;
+            padding: 0 5px; border: 2px solid white;
+        }
+        .bell-badge.visible { display: flex; }
+
+        .venc-panel {
+            display: none;
+            position: absolute;
+            top: 60px; left: 50%;
+            transform: translateX(-50%);
+            width: min(420px, calc(100vw - 20px));
+            max-height: 60vh; overflow-y: auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 8px 26px rgba(0,0,0,.4);
+            z-index: 1401;
+        }
+        .venc-panel.visible { display: block; }
+        .venc-head {
+            padding: 12px 14px; border-bottom: 1px solid #eee;
+            display: flex; align-items: center; justify-content: space-between; gap: 8px;
+        }
+        .venc-head b { font-size: 14px; color: #111; }
+        .venc-item {
+            padding: 11px 14px; border-bottom: 1px solid #f2f2f2;
+            cursor: pointer; display: flex; align-items: center; gap: 10px;
+        }
+        .venc-item:hover { background: #fafafa; }
+        .venc-item:last-child { border-bottom: none; }
+        .venc-pastilla {
+            font-size: 10px; font-weight: bold; color: white;
+            padding: 3px 8px; border-radius: 10px; white-space: nowrap; flex-shrink: 0;
+        }
+        .venc-nombre  { font-size: 13px; font-weight: bold; color: #111; line-height: 1.25; }
+        .venc-detalle { font-size: 11px; color: #777; margin-top: 2px; }
+        .venc-vacio   { padding: 18px 14px; font-size: 12px; color: #888; text-align: center; }
+        .venc-aviso-permiso {
+            padding: 10px 14px; background: #fffbeb;
+            font-size: 11px; color: #92400e; border-bottom: 1px solid #fde68a;
+        }
+
+        /* ── Sugerencias de localidad ── */
+        .loc-wrap { position: relative; flex: 1; min-width: 0; }
+        .loc-suggest {
+            display: none;
+            position: absolute;
+            top: calc(100% + 4px); left: 0; right: 0;
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            box-shadow: 0 6px 18px rgba(0,0,0,.25);
+            max-height: 260px; overflow-y: auto;
+            z-index: 1400;
+        }
+        .loc-suggest.visible { display: block; }
+        .loc-item {
+            padding: 10px 12px;
+            font-size: 13px;
+            cursor: pointer;
+            border-bottom: 1px solid #f0f0f0;
+            line-height: 1.3;
+        }
+        .loc-item:last-child { border-bottom: none; }
+        .loc-item:hover, .loc-item.activo { background: #eff6ff; }
+        .loc-item .principal { font-weight: bold; color: #111; }
+        .loc-item .detalle   { font-size: 11px; color: #777; }
+        .loc-vacio { padding: 10px 12px; font-size: 12px; color: #888; }
+
         /* ── Indicador de sin conexión ── */
         .offline-badge {
             display: none;
@@ -397,8 +480,7 @@
     <div id="field-list"></div>
     <div style="padding:10px;display:flex;gap:5px;">
         <button onclick="exportData()" style="flex:1;font-size:10px;padding:5px;border-radius:4px;border:1px solid #ccc;cursor:pointer">Bajar Backup</button>
-        <button onclick="document.getElementById('import').click()" style="flex:1;font-size:10px;padding:5px;border-radius:4px;border:1px solid #ccc;background:#eff6ff;cursor:pointer">Subir a Nube</button>
-        <button onclick="cerrarSesion()" style="flex:0 0 auto;font-size:10px;padding:5px 8px;border-radius:4px;border:1px solid #fecaca;background:#fef2f2;color:#991b1b;cursor:pointer" title="Cerrar sesión">Salir</button>
+        <button onclick="document.getElementById('import').click()" style="flex:1;font-size:10px;padding:5px;border-radius:4px;border:1px solid #ccc;background:#fff7ed;cursor:pointer" title="Restaura un archivo de backup: sobrescribe los lotes que tengan el mismo ID">Restaurar Backup</button>
         <input type="file" id="import" style="display:none" accept=".json" onchange="importData(this)">
     </div>
 </div>
@@ -410,10 +492,19 @@
             title="Activar/desactivar seguimiento en vivo">
             🎯 Siguiendo…
         </button>
-        <input type="text" id="loc-search" placeholder="Ir a localidad (Ej: Las Varas)..." style="flex:1;padding:8px;border:1px solid #ccc;border-radius:6px;min-width:0;">
+        <button id="bell-btn" class="bell-btn apagada" onclick="togglePanelVencimientos()" title="Arrendamientos próximos a vencer">
+            🔔<span id="bell-badge" class="bell-badge">0</span>
+        </button>
+        <div class="loc-wrap">
+            <input type="text" id="loc-search" autocomplete="off"
+                   placeholder="Ir a localidad (Ej: Las Varas)..."
+                   style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;min-width:0;">
+            <div id="loc-suggest" class="loc-suggest"></div>
+        </div>
         <button onclick="buscarLocalidad()" style="padding:8px 14px;background:var(--primary);color:white;border:none;border-radius:6px;cursor:pointer;font-weight:bold;touch-action:manipulation;">Ir</button>
     </div>
     <div id="map"></div>
+    <div id="venc-panel" class="venc-panel"></div>
     <div id="offline-badge" class="offline-badge">📴 Sin conexión · los cambios se sincronizan al volver</div>
     <div id="gps-warning" class="gps-warning"></div>
     <button id="add-field-btn" class="btn-add-field" onclick="toggleAddField()" title="Dibujar un nuevo lote">
@@ -502,13 +593,6 @@
     let fields = [];
     const colors = { 0:'#9ca3af', 1:'#22c55e', 2:'#eab308', 3:'#ef4444', 4:'#3b82f6' };
 
-    // ── Niveles de acercamiento ───────────────────────────────────────────────
-    // Subí el número para acercar más, bajalo para alejar (cada punto es el doble).
-    const ZOOM_INICIAL   = 14;   // lo que se ve al abrir, antes de que enganche el GPS
-    const ZOOM_LOTE      = 15;   // mínimo garantizado al tocar un lote de la lista
-    const ZOOM_LOCALIDAD = 15;   // al buscar un pueblo con el botón "Ir"
-    const ZOOM_GPS       = 17;   // al enganchar tu posición
-
     // ── Panel lateral ─────────────────────────────────────────────────────────
     // Un único estado (body.sb-cerrado) que se traduce distinto en cada tamaño:
     // en escritorio el panel comprime el mapa, en celular es un drawer encima.
@@ -572,14 +656,6 @@
         polygonDrawHandler.enable();
         btn.classList.add('drawing');
         btn.innerHTML = '✕ Cancelar';
-    }
-
-    // Encuadra el lote, pero sin alejarse más de ZOOM_LOTE: en los campos muy
-    // grandes preferimos ver el detalle aunque no entre el polígono completo.
-    function irAlLote(coords) {
-        const bounds = L.polygon(coords).getBounds();
-        if (map.getBoundsZoom(bounds) < ZOOM_LOTE) map.setView(bounds.getCenter(), ZOOM_LOTE);
-        else                                       map.fitBounds(bounds);
     }
 
     // ── Editar la forma (los vértices) de un lote ya guardado ──────────────────
@@ -725,7 +801,7 @@
         if (isTracking) {
             if (firstLocateFix) {
                 // Primer fix del GPS al arrancar: la cámara "cae" directo sobre la posición real.
-                map.flyTo([lat, lng], ZOOM_GPS);
+                map.flyTo([lat, lng], 17);
                 firstLocateFix = false;
             } else {
                 map.panTo([lat, lng]);
@@ -745,20 +821,322 @@
         showGpsWarning(msgs[e.code] || '⚠️ No se pudo obtener tu ubicación.');
     }
 
-    async function buscarLocalidad() {
-        const q = document.getElementById('loc-search').value;
-        if (!q) return;
+    // ══════════════════════════════════════════════════════════════════════════
+    //  Avisos de vencimiento de arrendamiento
+    //  El contrato se toma a 3 años desde la fecha de inicio. Avisamos cuando
+    //  faltan 12, 6 y 3 meses, y cuando ya venció.
+    // ══════════════════════════════════════════════════════════════════════════
+    const HITOS = [
+        { clave: '12m',  meses: 12, texto: 'Falta 1 año',     color: '#eab308' },
+        { clave: '6m',   meses: 6,  texto: 'Faltan 6 meses',  color: '#f97316' },
+        { clave: '3m',   meses: 3,  texto: 'Faltan 3 meses',  color: '#ef4444' },
+        { clave: 'venc', meses: 0,  texto: 'VENCIDO',         color: '#7f1d1d' }
+    ];
+    const CLAVE_AVISOS = 'agrolease_avisos_vistos';
+    let vencimientosRevisados = false;
+
+    // Meses que faltan hasta el fin del arrendamiento (null si no aplica).
+    function mesesHastaVencimiento(f) {
+        if (f.isOwn || !f.date) return null;
+        const [anio, mes] = f.date.split('-').map(Number);
+        if (!anio || !mes) return null;
+        const venc = new Date(anio + 3, mes - 1, 1);
+        const hoy  = new Date();
+        return (venc.getFullYear() - hoy.getFullYear()) * 12 + (venc.getMonth() - hoy.getMonth());
+    }
+
+    // Hito más cercano ya alcanzado; null si todavía falta más de un año.
+    function hitoDe(meses) {
+        if (meses === null) return null;
+        if (meses <= 0)  return HITOS[3];
+        if (meses <= 3)  return HITOS[2];
+        if (meses <= 6)  return HITOS[1];
+        if (meses <= 12) return HITOS[0];
+        return null;
+    }
+
+    function lotesPorVencer() {
+        return fields
+            .map(f => ({ f, meses: mesesHastaVencimiento(f) }))
+            .map(o => ({ ...o, hito: hitoDe(o.meses) }))
+            .filter(o => o.hito)
+            .sort((a, b) => a.meses - b.meses);
+    }
+
+    function leerAvisosVistos() {
+        try { return JSON.parse(localStorage.getItem(CLAVE_AVISOS) || '{}'); }
+        catch { return {}; }
+    }
+    function guardarAvisosVistos(v) {
+        try { localStorage.setItem(CLAVE_AVISOS, JSON.stringify(v)); } catch {}
+    }
+
+    // ── Notificación del sistema ──────────────────────────────────────────────
+    async function mostrarNotificacion(cantidad) {
+        if (!('Notification' in window) || Notification.permission !== 'granted') return;
+        const cuerpo = 'Se acerca el vencimiento de ' +
+            (cantidad === 1 ? 'un arrendamiento' : `${cantidad} arrendamientos`) +
+            ', entrá para revisar con más detalle.';
         try {
-            const res  = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}`);
-            const data = await res.json();
-            if (data.length > 0) map.setView([data[0].lat, data[0].lon], ZOOM_LOCALIDAD);
+            // En Android hay que pasar por el service worker; new Notification() falla.
+            const reg = await navigator.serviceWorker.getRegistration();
+            if (reg) {
+                reg.showNotification('AgroLease Tracker', {
+                    body: cuerpo, icon: './icon-192.png', badge: './icon-192.png', tag: 'agrolease-vencimientos'
+                });
+            } else {
+                new Notification('AgroLease Tracker', { body: cuerpo, icon: './icon-192.png' });
+            }
+        } catch (e) { console.warn('No se pudo mostrar la notificación:', e); }
+    }
+
+    async function pedirPermisoNotificaciones() {
+        if (!('Notification' in window)) {
+            alert('Este navegador no soporta notificaciones.');
+            return false;
+        }
+        if (Notification.permission === 'granted') return true;
+        if (Notification.permission === 'denied') {
+            alert('Las notificaciones están bloqueadas para este sitio. Habilitalas desde los ajustes del navegador.');
+            return false;
+        }
+        const r = await Notification.requestPermission();
+        actualizarCampana();
+        return r === 'granted';
+    }
+
+    // ── Revisión: corre al cargar los lotes y al abrir la app ─────────────────
+    function revisarVencimientos() {
+        const pendientes = lotesPorVencer();
+        actualizarCampana(pendientes.length);
+
+        // Solo avisamos por hitos nuevos: si ya avisamos "6 meses" no repetimos
+        // hasta que el lote pase a "3 meses".
+        const vistos = leerAvisosVistos();
+        const orden  = HITOS.map(h => h.clave);
+        let nuevos = 0;
+
+        pendientes.forEach(({ f, hito }) => {
+            const previo = vistos[f.id];
+            if (previo === undefined || orden.indexOf(hito.clave) > orden.indexOf(previo)) {
+                vistos[f.id] = hito.clave;
+                nuevos++;
+            }
+        });
+
+        if (nuevos > 0) {
+            guardarAvisosVistos(vistos);
+            mostrarNotificacion(nuevos);
+            abrirPanelVencimientos();     // además lo mostramos dentro de la app
+        }
+    }
+
+    function actualizarCampana(cantidad) {
+        if (cantidad === undefined) cantidad = lotesPorVencer().length;
+        const badge = document.getElementById('bell-badge');
+        const btn   = document.getElementById('bell-btn');
+        badge.textContent = cantidad;
+        badge.classList.toggle('visible', cantidad > 0);
+        const activas = ('Notification' in window) && Notification.permission === 'granted';
+        btn.classList.toggle('apagada', !activas);
+        btn.title = activas
+            ? `${cantidad} arrendamiento(s) próximos a vencer`
+            : 'Tocá para activar las notificaciones de vencimiento';
+    }
+
+    // ── Panel dentro de la app ────────────────────────────────────────────────
+    function abrirPanelVencimientos() {
+        const panel = document.getElementById('venc-panel');
+        const lista = lotesPorVencer();
+        const permisoPendiente = ('Notification' in window) && Notification.permission !== 'granted';
+
+        let html = `<div class="venc-head">
+                        <b>Arrendamientos próximos a vencer</b>
+                        <button onclick="cerrarPanelVencimientos()" style="border:none;background:none;font-size:18px;cursor:pointer;color:#999;line-height:1">×</button>
+                    </div>`;
+
+        if (permisoPendiente) {
+            html += `<div class="venc-aviso-permiso">
+                        Las notificaciones están desactivadas.
+                        <a href="#" onclick="pedirPermisoNotificaciones();return false;" style="color:#92400e;font-weight:bold;">Activarlas</a>
+                     </div>`;
+        }
+
+        if (!lista.length) {
+            html += '<div class="venc-vacio">No hay arrendamientos por vencer en el próximo año.</div>';
+        } else {
+            html += lista.map(({ f, meses, hito }) => {
+                const [a, m] = f.date.split('-').map(Number);
+                const vence  = `${String(m).padStart(2,'0')}/${a + 3}`;
+                const resta  = meses <= 0 ? 'ya vencido' : `en ${meses} mes${meses === 1 ? '' : 'es'}`;
+                return `<div class="venc-item" data-id="${f.id}">
+                            <span class="venc-pastilla" style="background:${hito.color}">${hito.texto}</span>
+                            <div style="min-width:0;flex:1">
+                                <div class="venc-nombre"></div>
+                                <div class="venc-detalle">Vence ${vence} · ${resta} · ${f.ha} Ha</div>
+                            </div>
+                        </div>`;
+            }).join('');
+        }
+        panel.innerHTML = html;
+
+        // Nombres por textContent y click para ir al lote.
+        panel.querySelectorAll('.venc-item').forEach(el => {
+            const id = Number(el.dataset.id);
+            const o  = lista.find(x => x.f.id === id);
+            el.querySelector('.venc-nombre').textContent =
+                o.f.producer + (o.f.owner ? '  ·  Dueño: ' + o.f.owner : '');
+            el.onclick = () => {
+                if (Array.isArray(o.f.coords)) map.fitBounds(L.polygon(o.f.coords).getBounds());
+                cerrarPanelVencimientos();
+            };
+        });
+        panel.classList.add('visible');
+    }
+
+    function cerrarPanelVencimientos() {
+        document.getElementById('venc-panel').classList.remove('visible');
+    }
+
+    function togglePanelVencimientos() {
+        const panel = document.getElementById('venc-panel');
+        if (panel.classList.contains('visible')) { cerrarPanelVencimientos(); return; }
+        // Si nunca se pidió el permiso, lo pedimos con este toque (hace falta un gesto).
+        if (('Notification' in window) && Notification.permission === 'default') pedirPermisoNotificaciones();
+        abrirPanelVencimientos();
+    }
+
+    // ── Buscador de localidades con sugerencias ───────────────────────────────
+    // Nominatim pide no superar 1 consulta por segundo, así que esperamos a que
+    // dejes de tipear antes de pedir, y cancelamos la búsqueda anterior.
+    let sugerencias = [], sugerenciaActiva = -1;
+    let locDebounce = null, locAbort = null;
+
+    function cerrarSugerencias() {
+        document.getElementById('loc-suggest').classList.remove('visible');
+        sugerenciaActiva = -1;
+    }
+
+    // Recuadro de Argentina + sesgo hacia Las Varillas, para que lo cercano suba.
+    const BBOX_AR = '-73.6,-55.1,-53.6,-21.8';
+    const SESGO   = { lat: -32.71, lon: -62.72 };
+
+    function etiquetaDe(p) {
+        return {
+            principal: p.name || '(sin nombre)',
+            detalle: [p.county, p.state].filter(Boolean).join(' · ')
+        };
+    }
+
+    function pintarSugerencias(lista) {
+        const cont = document.getElementById('loc-suggest');
+        sugerencias = lista;
+        sugerenciaActiva = -1;
+
+        if (!lista.length) {
+            cont.innerHTML = '<div class="loc-vacio">Sin resultados</div>';
+            cont.classList.add('visible');
+            return;
+        }
+        cont.innerHTML = lista.map((_, i) =>
+            `<div class="loc-item" data-i="${i}"><div class="principal"></div><div class="detalle"></div></div>`
+        ).join('');
+
+        // Texto por textContent: un nombre con < o & no puede romper el HTML.
+        cont.querySelectorAll('.loc-item').forEach((el, i) => {
+            const t = etiquetaDe(lista[i].properties);
+            el.querySelector('.principal').textContent = t.principal;
+            el.querySelector('.detalle').textContent   = t.detalle;
+            el.onclick = () => elegirSugerencia(i);
+        });
+        cont.classList.add('visible');
+    }
+
+    function elegirSugerencia(i) {
+        const s = sugerencias[i];
+        if (!s) return;
+        const p = s.properties;
+        document.getElementById('loc-search').value = p.name || '';
+        cerrarSugerencias();
+
+        // extent viene como [oeste, norte, este, sur] cuando el lugar tiene superficie.
+        if (p.extent && p.extent.length === 4) {
+            const [o, n, e, s2] = p.extent;
+            map.fitBounds([[s2, o], [n, e]]);
+        } else {
+            const [lon, lat] = s.geometry.coordinates;
+            map.setView([lat, lon], 14);
+        }
+    }
+
+    // Photon (OpenStreetMap) sí busca por prefijo: con "Las Vari" ya sugiere
+    // "Las Varillas". Nominatim, en cambio, exige la palabra completa.
+    async function pedirSugerencias(q) {
+        if (locAbort) locAbort.abort();
+        locAbort = new AbortController();
+        try {
+            const url = 'https://photon.komoot.io/api/'
+                      + `?q=${encodeURIComponent(q)}&limit=15&lat=${SESGO.lat}&lon=${SESGO.lon}&bbox=${BBOX_AR}`;
+            const res  = await fetch(url, { signal: locAbort.signal });
+            const json = await res.json();
+
+            const vistos = new Set();
+            const lista = (json.features || [])
+                // El recuadro es orientativo: filtramos por país para no mezclar Chile o Brasil.
+                .filter(f => !f.properties.country || f.properties.country === 'Argentina')
+                .filter(f => {
+                    const t = etiquetaDe(f.properties);
+                    const clave = t.principal + '|' + t.detalle;
+                    if (vistos.has(clave)) return false;
+                    vistos.add(clave);
+                    return true;
+                })
+                // Primero pueblos y ciudades; después comercios, calles y demás.
+                .sort((a, b) => (a.properties.osm_key === 'place' ? 0 : 1) -
+                                (b.properties.osm_key === 'place' ? 0 : 1))
+                .slice(0, 6);
+
+            pintarSugerencias(lista);
+        } catch (e) {
+            if (e.name !== 'AbortError') { console.error(e); cerrarSugerencias(); }
+        }
+    }
+
+    function alTipearLocalidad() {
+        const q = document.getElementById('loc-search').value.trim();
+        clearTimeout(locDebounce);
+        if (q.length < 3) { cerrarSugerencias(); return; }
+        if (!navigator.onLine) { cerrarSugerencias(); return; }   // sin señal no hay geocodificador
+        locDebounce = setTimeout(() => pedirSugerencias(q), 450);
+    }
+
+    function moverSugerencia(paso) {
+        const items = document.querySelectorAll('#loc-suggest .loc-item');
+        if (!items.length) return;
+        if (sugerenciaActiva >= 0) items[sugerenciaActiva].classList.remove('activo');
+        sugerenciaActiva = (sugerenciaActiva + paso + items.length) % items.length;
+        items[sugerenciaActiva].classList.add('activo');
+        items[sugerenciaActiva].scrollIntoView({ block: 'nearest' });
+    }
+
+    // El botón "Ir" toma la sugerencia marcada, o busca directo lo escrito.
+    async function buscarLocalidad() {
+        if (sugerenciaActiva >= 0) return elegirSugerencia(sugerenciaActiva);
+        if (sugerencias.length)    return elegirSugerencia(0);
+
+        const q = document.getElementById('loc-search').value.trim();
+        if (!q) return;
+        if (!navigator.onLine) return alert('Necesitás conexión para buscar una localidad.');
+        try {
+            await pedirSugerencias(q);
+            if (sugerencias.length) elegirSugerencia(0);
             else alert('No se encontró esa localidad.');
-        } catch(e) { console.error(e); }
+        } catch(e) { console.error(e); alert('No se pudo buscar la localidad.'); }
     }
 
     // ── Init ──────────────────────────────────────────────────────────────────
     function init() {
-        map = L.map('map', { zoomControl: false }).setView([-32.714, -62.719], ZOOM_INICIAL);
+        map = L.map('map', { zoomControl: false }).setView([-32.714, -62.719], 13);
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }).addTo(map);
 
         drawnItems = new L.FeatureGroup().addTo(map);
@@ -810,6 +1188,9 @@
                     fields.push(data);
                 });
                 renderAll();
+                // Una sola revisión por apertura: después solo refrescamos el contador.
+                if (!vencimientosRevisados) { vencimientosRevisados = true; revisarVencimientos(); }
+                else actualizarCampana();
             },
             (err) => {
                 // Sin esto el rechazo queda como error suelto en consola y la app
@@ -935,7 +1316,7 @@
                     <div style="color:${colors[status.year]};font-size:9px;font-weight:bold;margin-top:5px;">${status.label}</div>
                 `;
                 card.onclick = () => {
-                    if (Array.isArray(f.coords)) irAlLote(f.coords);
+                    if (Array.isArray(f.coords)) map.fitBounds(L.polygon(f.coords).getBounds());
                     // En mobile: cerrar sidebar al tocar un campo
                     if (window.innerWidth <= 768) closeSidebar();
                 };
@@ -1104,8 +1485,10 @@
         }
     }
 
+    // Sin botón en pantalla: la sesión queda guardada en el dispositivo.
+    // Para cerrarla (por ejemplo si prestás o vendés la tablet) se puede llamar
+    // cerrarSesion() desde la consola del navegador, o borrar los datos del sitio.
     function cerrarSesion() {
-        if (!confirm('¿Cerrar sesión?')) return;
         firebase.auth().signOut().then(() => location.reload());
     }
 
@@ -1127,6 +1510,19 @@
     }
     window.addEventListener('online',  actualizarEstadoConexion);
     window.addEventListener('offline', actualizarEstadoConexion);
+
+    // ── Eventos del buscador de localidades ───────────────────────────────────
+    const inputLoc = document.getElementById('loc-search');
+    inputLoc.addEventListener('input', alTipearLocalidad);
+    inputLoc.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown')      { e.preventDefault(); moverSugerencia(1); }
+        else if (e.key === 'ArrowUp')   { e.preventDefault(); moverSugerencia(-1); }
+        else if (e.key === 'Enter')     { e.preventDefault(); buscarLocalidad(); inputLoc.blur(); }
+        else if (e.key === 'Escape')    { cerrarSugerencias(); }
+    });
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.loc-wrap')) cerrarSugerencias();
+    });
 
     // Debounce: evita reconstruir los ~170 polígonos en cada tecla (tironea en tablet).
     let searchDebounce = null;

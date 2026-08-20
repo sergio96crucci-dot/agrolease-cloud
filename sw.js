@@ -10,7 +10,7 @@
 //                             caché offline vía enablePersistence()).
 // ══════════════════════════════════════════════════════════════════════════
 
-const VERSION     = 'v3';
+const VERSION     = 'v4';
 const SHELL_CACHE = `agrolease-shell-${VERSION}`;
 const TILE_CACHE  = `agrolease-tiles-${VERSION}`;
 const MAX_TILES   = 800;   // ~40-60 MB de imágenes satelitales
@@ -36,7 +36,8 @@ const SIEMPRE_RED = [
     'firebaseinstallations.googleapis.com',
     'identitytoolkit.googleapis.com',
     'securetoken.googleapis.com',
-    'nominatim.openstreetmap.org'
+    'nominatim.openstreetmap.org',
+    'photon.komoot.io'
 ];
 
 // ── Instalación: precargamos el shell ─────────────────────────────────────
@@ -60,6 +61,17 @@ self.addEventListener('activate', (e) => {
             names.filter(n => n.startsWith('agrolease-') && n !== SHELL_CACHE && n !== TILE_CACHE)
                  .map(n => caches.delete(n))
         )).then(() => self.clients.claim())
+    );
+});
+
+// ── Al tocar la notificación de vencimientos, traemos la app al frente ────
+self.addEventListener('notificationclick', (e) => {
+    e.notification.close();
+    e.waitUntil(
+        self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(lista => {
+            for (const c of lista) if ('focus' in c) return c.focus();
+            if (self.clients.openWindow) return self.clients.openWindow('./index.html');
+        })
     );
 });
 
