@@ -123,6 +123,50 @@
         .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
         .color-box { width: 13px; height: 13px; border-radius: 3px; flex-shrink: 0; }
 
+        /* ── Marcador GPS en vivo (estilo Google Maps) ── */
+        .gps-live-icon { background: transparent; border: none; }
+        .gps-marker-dot {
+            width: 18px; height: 18px;
+            background: #4285F4;
+            border: 3px solid white;
+            border-radius: 50%;
+            box-shadow: 0 0 6px rgba(0,0,0,0.45);
+            position: absolute; top: 50%; left: 50%;
+            margin: -12px 0 0 -12px;
+        }
+        .gps-marker-pulse {
+            width: 18px; height: 18px;
+            background: rgba(66,133,244,0.35);
+            border-radius: 50%;
+            position: absolute; top: 50%; left: 50%;
+            margin: -9px 0 0 -9px;
+            animation: gps-pulse 2s infinite ease-out;
+        }
+        @keyframes gps-pulse {
+            0%   { transform: scale(1);   opacity: 0.8; }
+            100% { transform: scale(3.2); opacity: 0; }
+        }
+
+        /* ── Aviso discreto de estado GPS ── */
+        .gps-warning {
+            display: none;
+            position: absolute;
+            top: 65px; left: 50%;
+            transform: translateX(-50%);
+            background: #fef3c7;
+            color: #92400e;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+            z-index: 1000;
+            white-space: nowrap;
+            max-width: calc(100% - 20px);
+            text-overflow: ellipsis;
+            overflow: hidden;
+        }
+
         /* ── Modal ── */
         .modal-overlay {
             position: fixed; inset: 0;
@@ -228,10 +272,16 @@
             title="Ir a mi ubicación">
             📍 Ubicación
         </button>
+        <button id="track-btn" onclick="toggleTracking()"
+            style="padding:8px 12px;background:#6b7280;color:white;border:none;border-radius:8px;cursor:pointer;font-weight:bold;touch-action:manipulation;white-space:nowrap;flex-shrink:0;"
+            title="Activar/desactivar seguimiento en vivo">
+            🎯 Seguir
+        </button>
         <input type="text" id="loc-search" placeholder="Ir a localidad (Ej: Las Varas)..." style="flex:1;padding:8px;border:1px solid #ccc;border-radius:6px;min-width:0;">
         <button onclick="buscarLocalidad()" style="padding:8px 14px;background:var(--primary);color:white;border:none;border-radius:6px;cursor:pointer;font-weight:bold;touch-action:manipulation;">Ir</button>
     </div>
     <div id="map"></div>
+    <div id="gps-warning" class="gps-warning"></div>
     <div class="legend">
         <b>Estado de Gestión</b>
         <div class="legend-item"><div class="color-box" style="background:var(--blue)"></div> Propio</div>
@@ -333,8 +383,97 @@
         document.getElementById('date-group').style.display = isOwn ? 'none' : 'block';
     }
 
-    // ── GPS: ir a ubicación actual ────────────────────────────────────────────
+    // ── GPS: ir a ubicación actual (fix único) ────────────────────────────────
     let userMarker = null, userCircle = null;
+
+    // ── GPS: seguimiento en vivo (live tracking, estilo Google Maps) ─────────
+    let isTracking = false;
+    let liveMarker = null, liveCircle = null;
+    let firstLocateFix = true;
+    let gpsWarningTimeout = null;
+
+    const liveLocationIcon = L.divIcon({
+        className: 'gps-live-icon',
+        html: '<div class="gps-marker-pulse"></div><div class="gps-marker-dot"></div>',
+        iconSize: [18, 18],
+        iconAnchor: [9, 9]
+    });
+
+    function showGpsWarning(msg) {
+        const el = document.getElementById('gps-warning');
+        el.textContent = msg;
+        el.style.display = 'block';
+        clearTimeout(gpsWarningTimeout);
+        gpsWarningTimeout = setTimeout(() => { el.style.display = 'none'; }, 6000);
+    }
+    function hideGpsWarning() {
+        clearTimeout(gpsWarningTimeout);
+        document.getElementById('gps-warning').style.display = 'none';
+    }
+
+    function toggleTracking() {
+        const btn = document.getElementById('track-btn');
+
+        if (!navigator.geolocation) {
+            alert('Tu navegador no soporta geolocalización.');
+            return;
+        }
+
+        if (isTracking) {
+            // Apagar modo seguimiento: dejamos de escuchar el GPS y de forzar la vista.
+            map.stopLocate();
+            isTracking = false;
+            btn.style.background = '#6b7280';
+            btn.textContent = '🎯 Seguir';
+            hideGpsWarning();
+        } else {
+            // Encender modo seguimiento: Leaflet hace polling continuo del GPS.
+            firstLocateFix = true;
+            btn.style.background = 'var(--success)';
+            btn.textContent = '🎯 Siguiendo…';
+            isTracking = true;
+            map.locate({
+                watch: true,
+                enableHighAccuracy: true,
+                maximumAge: 3000,
+                timeout: 20000
+            });
+        }
+    }
+
+    function onLocationFound(e) {
+        const { lat, lng } = e.latlng;
+        const radius = e.accuracy;
+
+        if (!liveMarker) {
+            liveMarker = L.marker([lat, lng], { icon: liveLocationIcon, zIndexOffset: 1000, interactive: false }).addTo(map);
+        } else {
+            liveMarker.setLatLng([lat, lng]);
+        }
+
+        if (!liveCircle) {
+            liveCircle = L.circle([lat, lng], {
+                radius, color: '#4285F4', fillColor: '#4285F4', fillOpacity: 0.12, weight: 1, interactive: false
+            }).addTo(map);
+        } else {
+            liveCircle.setLatLng([lat, lng]).setRadius(radius);
+        }
+
+        if (isTracking) {
+            if (firstLocateFix) {
+                map.setView([lat, lng], Math.max(map.getZoom(), 16));
+                firstLocateFix = false;
+            } else {
+                map.panTo([lat, lng]);
+            }
+        }
+        hideGpsWarning();
+    }
+
+    function onLocationError(e) {
+        // No rompemos la app: solo avisamos si el modo seguimiento sigue activo.
+        if (isTracking) showGpsWarning('⚠️ Señal GPS débil o perdida. Buscando señal…');
+    }
 
     function irAMiUbicacion() {
         const btn = document.getElementById('gps-btn');
@@ -415,6 +554,9 @@
         new L.Control.Draw({
             draw: { polygon: true, rectangle: false, circle: false, marker: false, circlemarker: false, polyline: false }
         }).addTo(map);
+
+        map.on('locationfound', onLocationFound);
+        map.on('locationerror', onLocationError);
 
         map.on(L.Draw.Event.CREATED, (e) => {
             if (lastLayer) map.removeLayer(lastLayer);
