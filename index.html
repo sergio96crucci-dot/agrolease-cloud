@@ -273,9 +273,9 @@
             📍 Ubicación
         </button>
         <button id="track-btn" onclick="toggleTracking()"
-            style="padding:8px 12px;background:#6b7280;color:white;border:none;border-radius:8px;cursor:pointer;font-weight:bold;touch-action:manipulation;white-space:nowrap;flex-shrink:0;"
+            style="padding:8px 12px;background:var(--success);color:white;border:none;border-radius:8px;cursor:pointer;font-weight:bold;touch-action:manipulation;white-space:nowrap;flex-shrink:0;"
             title="Activar/desactivar seguimiento en vivo">
-            🎯 Seguir
+            🎯 Siguiendo…
         </button>
         <input type="text" id="loc-search" placeholder="Ir a localidad (Ej: Las Varas)..." style="flex:1;padding:8px;border:1px solid #ccc;border-radius:6px;min-width:0;">
         <button onclick="buscarLocalidad()" style="padding:8px 14px;background:var(--primary);color:white;border:none;border-radius:6px;cursor:pointer;font-weight:bold;touch-action:manipulation;">Ir</button>
@@ -411,34 +411,35 @@
         document.getElementById('gps-warning').style.display = 'none';
     }
 
-    function toggleTracking() {
+    function startTracking() {
         const btn = document.getElementById('track-btn');
+        firstLocateFix = true;
+        isTracking = true;
+        btn.style.background = 'var(--success)';
+        btn.textContent = '🎯 Siguiendo…';
+        map.locate({
+            watch: true,
+            enableHighAccuracy: true,
+            maximumAge: 3000,
+            timeout: 20000
+        });
+    }
 
+    function stopTracking() {
+        const btn = document.getElementById('track-btn');
+        map.stopLocate();
+        isTracking = false;
+        btn.style.background = '#6b7280';
+        btn.textContent = '🎯 Seguir';
+        hideGpsWarning();
+    }
+
+    function toggleTracking() {
         if (!navigator.geolocation) {
             alert('Tu navegador no soporta geolocalización.');
             return;
         }
-
-        if (isTracking) {
-            // Apagar modo seguimiento: dejamos de escuchar el GPS y de forzar la vista.
-            map.stopLocate();
-            isTracking = false;
-            btn.style.background = '#6b7280';
-            btn.textContent = '🎯 Seguir';
-            hideGpsWarning();
-        } else {
-            // Encender modo seguimiento: Leaflet hace polling continuo del GPS.
-            firstLocateFix = true;
-            btn.style.background = 'var(--success)';
-            btn.textContent = '🎯 Siguiendo…';
-            isTracking = true;
-            map.locate({
-                watch: true,
-                enableHighAccuracy: true,
-                maximumAge: 3000,
-                timeout: 20000
-            });
-        }
+        isTracking ? stopTracking() : startTracking();
     }
 
     function onLocationFound(e) {
@@ -471,8 +472,14 @@
     }
 
     function onLocationError(e) {
-        // No rompemos la app: solo avisamos si el modo seguimiento sigue activo.
-        if (isTracking) showGpsWarning('⚠️ Señal GPS débil o perdida. Buscando señal…');
+        // No rompemos la app ni tocamos los lotes guardados: solo avisamos si el seguimiento sigue activo.
+        if (!isTracking) return;
+        const msgs = {
+            1: '⚠️ Permiso de ubicación denegado. Habilitalo en el navegador para ver tu posición.',
+            2: '⚠️ Señal GPS débil o perdida. Buscando señal…',
+            3: '⚠️ Tardando en obtener la posición. Buscando señal…'
+        };
+        showGpsWarning(msgs[e.code] || '⚠️ No se pudo obtener tu ubicación.');
     }
 
     function irAMiUbicacion() {
@@ -557,6 +564,9 @@
 
         map.on('locationfound', onLocationFound);
         map.on('locationerror', onLocationError);
+
+        // Arranque automático: pide permiso GPS y activa el seguimiento en vivo.
+        startTracking();
 
         map.on(L.Draw.Event.CREATED, (e) => {
             if (lastLayer) map.removeLayer(lastLayer);
