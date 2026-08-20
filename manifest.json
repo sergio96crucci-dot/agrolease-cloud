@@ -2,21 +2,30 @@
   "name": "AgroLease Tracker V10",
   "short_name": "AgroLease",
   "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
+  "orientation": "portrait-primary",
   "background_color": "#1a2a18",
   "theme_color": "#2D5A27",
+  "description": "Gestión de lotes, superficies y arrendamientos agrícolas.",
   "icons": [
     {
-      "src": "https://cdn-icons-png.flaticon.com/192/3004/3004814.png",
+      "src": "./icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/3004/3004814.png",
+      "src": "./icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

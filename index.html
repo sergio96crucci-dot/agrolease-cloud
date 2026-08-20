@@ -191,6 +191,24 @@
             overflow: hidden;
         }
 
+        /* ── Indicador de sin conexión ── */
+        .offline-badge {
+            display: none;
+            position: absolute;
+            top: 8px; left: 50%;
+            transform: translateX(-50%);
+            background: #374151;
+            color: #fde68a;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: bold;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            z-index: 1002;
+            white-space: nowrap;
+        }
+        .offline-badge.visible { display: block; }
+
         /* ── Modal ── */
         .modal-overlay {
             position: fixed; inset: 0;
@@ -242,6 +260,11 @@
 
             /* Leyenda más pequeña */
             .legend { font-size: 0.72em; padding: 8px 10px; max-width: calc(100vw - 20px); }
+        }
+
+        /* En pantallas angostas la leyenda sube para no pelear con el botón flotante */
+        @media (max-width: 420px) {
+            .legend { bottom: 92px; }
         }
 
         /* Controles de Leaflet más grandes en táctil */
@@ -299,6 +322,7 @@
         <button onclick="buscarLocalidad()" style="padding:8px 14px;background:var(--primary);color:white;border:none;border-radius:6px;cursor:pointer;font-weight:bold;touch-action:manipulation;">Ir</button>
     </div>
     <div id="map"></div>
+    <div id="offline-badge" class="offline-badge">📴 Sin conexión · los cambios se sincronizan al volver</div>
     <div id="gps-warning" class="gps-warning"></div>
     <button id="add-field-btn" class="btn-add-field" onclick="toggleAddField()" title="Dibujar un nuevo lote">
         ✏️ Añadir campo
@@ -334,6 +358,7 @@
         <div class="form-group">
             <label>Superficie (Ha)</label>
             <input type="number" id="f-ha" step="0.1" class="form-input">
+            <div id="ha-hint" style="display:none;font-size:11px;color:#666;margin-top:5px;"></div>
         </div>
         <div class="form-group">
             <label>Notas Técnicas</label>
@@ -361,6 +386,16 @@
     };
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
+
+    // ── Persistencia offline ──────────────────────────────────────────────────
+    // Cachea los lotes en el dispositivo: la app sigue funcionando sin señal en
+    // el campo y sincroniza sola cuando vuelve la conexión.
+    // Debe llamarse ANTES de cualquier otra operación de Firestore.
+    db.enablePersistence({ synchronizeTabs: true }).catch(err => {
+        if (err.code === 'failed-precondition')      console.warn('Persistencia offline: hay varias pestañas abiertas.');
+        else if (err.code === 'unimplemented')       console.warn('Persistencia offline: navegador no compatible.');
+        else                                        console.warn('Persistencia offline no disponible:', err);
+    });
 
     // ── Estado ────────────────────────────────────────────────────────────────
     let map, drawnItems, lastLayer, editingId = null;
@@ -588,6 +623,7 @@
             renderAll();
         });
 
+        actualizarEstadoConexion();
         setTimeout(() => map.invalidateSize(), 200);
     }
 
@@ -595,13 +631,36 @@
     function openModal()  { document.getElementById('modal-overlay').style.display = 'flex'; }
     function closeModal() {
         document.getElementById('modal-overlay').style.display = 'none';
+        // Si el lote era nuevo, sacamos del mapa el polígono temporal del dibujo.
+        // (El definitivo lo vuelve a dibujar renderAll() desde Firestore.)
         if (!editingId && lastLayer) map.removeLayer(lastLayer);
+        lastLayer  = null;
+        editingId  = null;
         resetForm();
     }
     function resetForm() {
         ['f-owner','f-producer','f-ha','f-date','f-notes'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('f-is-own').checked = false;
+        document.getElementById('ha-hint').style.display = 'none';
         toggleOwnField(false);
+    }
+
+    // Superficie real del polígono guardado, para detectar valores desfasados al editar.
+    function mostrarHaDelPoligono(coords) {
+        const hint = document.getElementById('ha-hint');
+        if (!Array.isArray(coords) || coords.length < 3) { hint.style.display = 'none'; return; }
+
+        const latlngs = coords.map(c => L.latLng(c[0], c[1]));
+        const haReal  = L.GeometryUtil.geodesicArea(latlngs) / 10000;
+        const haForm  = parseFloat(document.getElementById('f-ha').value || 0);
+
+        // Solo avisamos si difiere más de 1%, para no molestar cuando ya coincide.
+        if (haForm && Math.abs(haReal - haForm) / haForm < 0.01) { hint.style.display = 'none'; return; }
+
+        hint.style.display = 'block';
+        hint.innerHTML = `Según el polígono son <b>${haReal.toFixed(1)} Ha</b> ·
+            <a href="#" onclick="document.getElementById('f-ha').value=${haReal.toFixed(1)};document.getElementById('ha-hint').style.display='none';return false;"
+               style="color:var(--primary);font-weight:bold;">usar este valor</a>`;
     }
 
     // ── Guardar ───────────────────────────────────────────────────────────────
@@ -612,10 +671,16 @@
         if (!owner)              return alert("Ingresá el Propietario.");
         if (!isOwn && !producer) return alert("Ingresá el Productor.");
 
-        const fieldId    = editingId ? editingId : Date.now();
-        let rawCoords    = editingId
-            ? fields.find(f => f.id === editingId).coords
-            : lastLayer.getLatLngs()[0].map(ll => [ll.lat, ll.lng]);
+        const fieldId  = editingId ? editingId : Date.now();
+        let rawCoords;
+        if (editingId) {
+            const original = fields.find(f => f.id === editingId);
+            if (!original) return alert("No se encontró el lote que estabas editando. Recargá la app.");
+            rawCoords = original.coords;
+        } else {
+            if (!lastLayer) return alert("No hay un polígono dibujado para guardar.");
+            rawCoords = lastLayer.getLatLngs()[0].map(ll => [ll.lat, ll.lng]);
+        }
 
         const data = {
             id:       fieldId,
@@ -628,9 +693,13 @@
             coords:   JSON.stringify(rawCoords)
         };
 
+        // closeModal() se encarga de limpiar lastLayer/editingId; no los toques antes.
         db.collection("lotes").doc(fieldId.toString()).set(data)
-            .then(() => { lastLayer = null; closeModal(); })
-            .catch(err => console.error("Error al guardar:", err));
+            .then(() => closeModal())
+            .catch(err => {
+                console.error("Error al guardar:", err);
+                alert("❌ No se pudo guardar el lote: " + err.message);
+            });
     }
 
     // ── Render ────────────────────────────────────────────────────────────────
@@ -704,6 +773,7 @@
         document.getElementById('f-date').value         = f.date     || '';
         document.getElementById('f-notes').value        = f.notes    || '';
         toggleOwnField(f.isOwn);
+        mostrarHaDelPoligono(f.coords);
         openModal();
     }
 
@@ -716,28 +786,60 @@
 
     // ── Backup / Import ───────────────────────────────────────────────────────
     function exportData() {
-        const blob = new Blob([JSON.stringify(fields)], { type:'application/json' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'agro_backup.json';
+        if (!fields.length) return alert("Todavía no hay lotes para respaldar.");
+        const blob = new Blob([JSON.stringify(fields, null, 2)], { type:'application/json' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href     = url;
+        a.download = `agro_backup_${new Date().toISOString().slice(0,10)}.json`;
         a.click();
+        URL.revokeObjectURL(url);
     }
 
     function importData(input) {
+        const file = input.files[0];
+        if (!file) return;
+
         const reader = new FileReader();
-        reader.onload = async () => {
-            const backupFields = JSON.parse(reader.result);
-            for (const f of backupFields) {
-                let dataToSave = { ...f };
-                if (Array.isArray(dataToSave.coords)) {
-                    dataToSave.coords = JSON.stringify(dataToSave.coords);
-                }
-                await db.collection("lotes").doc(f.id.toString()).set(dataToSave);
+        reader.onerror = () => { alert("❌ No se pudo leer el archivo."); input.value = ''; };
+        reader.onload  = async () => {
+            let backupFields;
+            try {
+                backupFields = JSON.parse(reader.result);
+                if (!Array.isArray(backupFields)) throw new Error("el archivo no contiene una lista de lotes");
+                if (!backupFields.every(f => f && f.id != null)) throw new Error("hay lotes sin ID");
+            } catch (err) {
+                alert("❌ Backup inválido: " + err.message);
+                input.value = '';
+                return;
             }
-            alert("¡Backup cargado en la nube correctamente!");
-            document.getElementById('import').value = '';
+
+            if (!confirm(`¿Subir ${backupFields.length} lotes a la nube?\n\nLos lotes que tengan el mismo ID se van a SOBRESCRIBIR.`)) {
+                input.value = '';
+                return;
+            }
+
+            try {
+                // Escritura por lotes: mucho más rápido que un set() por documento.
+                for (let i = 0; i < backupFields.length; i += 400) {
+                    const batch = db.batch();
+                    backupFields.slice(i, i + 400).forEach(f => {
+                        const dataToSave = { ...f };
+                        if (Array.isArray(dataToSave.coords)) {
+                            dataToSave.coords = JSON.stringify(dataToSave.coords);
+                        }
+                        batch.set(db.collection("lotes").doc(f.id.toString()), dataToSave);
+                    });
+                    await batch.commit();
+                }
+                alert(`✓ ${backupFields.length} lotes cargados en la nube correctamente.`);
+            } catch (err) {
+                console.error("Error al importar:", err);
+                alert("❌ Error al subir el backup: " + err.message);
+            }
+            input.value = '';
         };
-        reader.readAsText(input.files[0]);
+        reader.readAsText(file);
     }
 
     // ── Bloquear pull-to-refresh (Android Chrome / Safari iOS) ───────────────
@@ -751,7 +853,20 @@
             e.preventDefault();
     }, { passive: false });
 
-    document.getElementById('list-search').oninput = renderAll;
+    // ── Estado de conexión ────────────────────────────────────────────────────
+    function actualizarEstadoConexion() {
+        document.getElementById('offline-badge')
+                .classList.toggle('visible', !navigator.onLine);
+    }
+    window.addEventListener('online',  actualizarEstadoConexion);
+    window.addEventListener('offline', actualizarEstadoConexion);
+
+    // Debounce: evita reconstruir los ~170 polígonos en cada tecla (tironea en tablet).
+    let searchDebounce = null;
+    document.getElementById('list-search').oninput = () => {
+        clearTimeout(searchDebounce);
+        searchDebounce = setTimeout(renderAll, 200);
+    };
     window.onload = init;
     window.addEventListener('resize', () => setTimeout(() => map && map.invalidateSize(), 150));
 </script>
@@ -759,7 +874,12 @@
 <script>
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('sw.js')
-            .then(() => console.log("Service Worker Registrado"));
+            .then(reg => {
+                console.log("Service Worker registrado");
+                // Si hay una versión nueva publicada, la tomamos en la próxima apertura.
+                reg.addEventListener('updatefound', () => console.log("Actualizando AgroLease…"));
+            })
+            .catch(err => console.warn("Service Worker no disponible:", err));
     }
 </script>
 </body>
