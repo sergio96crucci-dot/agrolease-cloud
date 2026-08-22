@@ -183,6 +183,27 @@
             gap: 8px;
             white-space: nowrap;
         }
+        /* ── Brújula: engancha o suelta la cámara sobre mi ubicación ── */
+        .compass-btn {
+            position: absolute;
+            bottom: 92px; right: 16px;
+            z-index: 1001;
+            width: 54px; height: 54px;
+            border-radius: 50%;
+            border: none;
+            background: white;
+            color: #444;
+            font-size: 25px; line-height: 1;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.35);
+            cursor: pointer;
+            touch-action: manipulation;
+            display: flex; align-items: center; justify-content: center;
+            transition: background .18s ease;
+        }
+        .compass-btn:active { transform: scale(0.94); }
+        /* Enganchada: el mapa te sigue */
+        .compass-btn.activa { background: #1d4ed8; }
+
         .btn-add-field:active { transform: scale(0.96); }
         .btn-add-field.drawing { background: var(--danger); }
         .btn-add-field.oculto  { display: none; }
@@ -489,11 +510,6 @@
 
 <div class="map-container">
     <div class="search-bar">
-        <button id="track-btn" onclick="toggleTracking()"
-            style="padding:8px 12px;background:var(--success);color:white;border:none;border-radius:8px;cursor:pointer;font-weight:bold;touch-action:manipulation;white-space:nowrap;flex-shrink:0;"
-            title="Activar/desactivar seguimiento en vivo">
-            🎯 Siguiendo…
-        </button>
         <button id="bell-btn" class="bell-btn apagada" onclick="togglePanelVencimientos()" title="Arrendamientos próximos a vencer">
             🔔<span id="bell-badge" class="bell-badge">0</span>
         </button>
@@ -509,6 +525,7 @@
     <div id="venc-panel" class="venc-panel"></div>
     <div id="offline-badge" class="offline-badge">📴 Sin conexión · los cambios se sincronizan al volver</div>
     <div id="gps-warning" class="gps-warning"></div>
+    <button id="compass-btn" class="compass-btn" onclick="toggleBrujula()" title="Centrar el mapa en mi ubicación">🧭</button>
     <button id="add-field-btn" class="btn-add-field" onclick="toggleAddField()" title="Dibujar un nuevo lote">
         ✏️ Añadir campo
     </button>
@@ -727,7 +744,9 @@
     }
 
     // ── GPS: seguimiento en vivo (live tracking, estilo Google Maps) ─────────
-    let isTracking = false;
+    let gpsActivo = false;      // el watch del GPS está corriendo
+    let camaraSigue = false;    // además, el mapa se centra en mi posición
+    let ultimaPosicion = null;  // último punto conocido, para la brújula
     let liveMarker = null, liveCircle = null;
     let firstLocateFix = true;
     let gpsWarningTimeout = null;
@@ -751,12 +770,17 @@
         document.getElementById('gps-warning').style.display = 'none';
     }
 
-    function startTracking() {
-        const btn = document.getElementById('track-btn');
-        firstLocateFix = true;
-        isTracking = true;
-        btn.style.background = 'var(--success)';
-        btn.textContent = '🎯 Siguiendo…';
+    // El GPS y la cámara son dos cosas independientes:
+    //   · gpsActivo   → el watch está corriendo y tu punto se mueve en el mapa.
+    //     Queda SIEMPRE encendido, aunque navegues a otro lado.
+    //   · camaraSigue → además, el mapa se centra en vos. Esto se apaga solo en
+    //     cuanto tocás el mapa, y se vuelve a encender con la brújula.
+    function iniciarGPS() {
+        if (!navigator.geolocation) {
+            showGpsWarning('⚠️ Tu navegador no soporta geolocalización.');
+            return;
+        }
+        gpsActivo = true;
         map.locate({
             watch: true,
             enableHighAccuracy: true,
@@ -765,34 +789,44 @@
         });
     }
 
-    function stopTracking() {
-        const btn = document.getElementById('track-btn');
-        map.stopLocate();
-        isTracking = false;
-        btn.style.background = '#6b7280';
-        btn.textContent = '🎯 Seguir';
-        hideGpsWarning();
+    function pintarBrujula() {
+        const btn = document.getElementById('compass-btn');
+        btn.classList.toggle('activa', camaraSigue);
+        btn.title = camaraSigue
+            ? 'La cámara te está siguiendo · tocá para soltarla'
+            : 'Centrar el mapa en mi ubicación';
     }
 
-    function toggleTracking() {
-        if (!navigator.geolocation) {
-            alert('Tu navegador no soporta geolocalización.');
+    // Brújula: te lleva a tu posición y engancha la cámara. Si ya venía
+    // enganchada, la suelta para poder mirar el mapa libremente.
+    function toggleBrujula() {
+        if (!gpsActivo) iniciarGPS();
+
+        if (camaraSigue) {
+            camaraSigue = false;
+            pintarBrujula();
             return;
         }
-        isTracking ? stopTracking() : startTracking();
+
+        camaraSigue = true;
+        pintarBrujula();
+
+        if (ultimaPosicion) map.flyTo(ultimaPosicion, Math.max(map.getZoom(), 16));
+        else showGpsWarning('Buscando tu ubicación…');
     }
 
-    // Cada vez que vos elegís mirar otro punto del mapa cortamos el seguimiento;
-    // si no, la siguiente lectura del GPS te devuelve a tu posición.
+    // Al navegar soltamos la cámara, pero el GPS sigue corriendo: tu punto se
+    // mantiene actualizado mientras mirás otra parte del mapa.
     function pausarSeguimientoPorNavegacion() {
-        if (!isTracking) return;
-        stopTracking();
-        showGpsWarning('Seguimiento pausado · tocá 🎯 Seguir para reactivarlo');
+        if (!camaraSigue) return;
+        camaraSigue = false;
+        pintarBrujula();
     }
 
     function onLocationFound(e) {
         const { lat, lng } = e.latlng;
         const radius = e.accuracy;
+        ultimaPosicion = [lat, lng];
 
         if (!liveMarker) {
             liveMarker = L.marker([lat, lng], { icon: liveLocationIcon, zIndexOffset: 1000, interactive: false }).addTo(map);
@@ -808,10 +842,10 @@
             liveCircle.setLatLng([lat, lng]).setRadius(radius);
         }
 
-        if (isTracking) {
+        // El marcador de arriba se actualiza siempre; mover la cámara es opcional.
+        if (camaraSigue) {
             if (firstLocateFix) {
-                // Primer fix del GPS al arrancar: la cámara "cae" directo sobre la posición real.
-                map.flyTo([lat, lng], 17);
+                map.flyTo([lat, lng], 17);   // primer enganche: caemos sobre la posición
                 firstLocateFix = false;
             } else {
                 map.panTo([lat, lng]);
@@ -821,8 +855,8 @@
     }
 
     function onLocationError(e) {
-        // No rompemos la app ni tocamos los lotes guardados: solo avisamos si el seguimiento sigue activo.
-        if (!isTracking) return;
+        // No rompemos la app ni tocamos los lotes guardados.
+        if (!gpsActivo) return;
         const msgs = {
             1: '⚠️ Permiso de ubicación denegado. Habilitalo en el navegador para ver tu posición.',
             2: '⚠️ Señal GPS débil o perdida. Buscando señal…',
@@ -1071,14 +1105,10 @@
         cerrarSugerencias();
         pausarSeguimientoPorNavegacion();
 
-        // extent viene como [oeste, norte, este, sur] cuando el lugar tiene superficie.
-        if (p.extent && p.extent.length === 4) {
-            const [o, n, e, s2] = p.extent;
-            map.fitBounds([[s2, o], [n, e]]);
-        } else {
-            const [lon, lat] = s.geometry.coordinates;
-            map.setView([lat, lon], 14);
-        }
+        // Siempre el mismo acercamiento que el buscador de siempre: encuadrar el
+        // área del lugar dejaba los pueblos chicos casi a nivel de calle.
+        const [lon, lat] = s.geometry.coordinates;
+        map.setView([lat, lon], 14);
     }
 
     // Photon (OpenStreetMap) sí busca por prefijo: con "Las Vari" ya sugiere
@@ -1169,8 +1199,13 @@
         // automáticos (panTo / flyTo del GPS) no lo activan.
         map.on('dragstart', pausarSeguimientoPorNavegacion);
 
-        // Arranque automático: pide permiso GPS y activa el seguimiento en vivo.
-        startTracking();
+        // El GPS arranca siempre solo y no se apaga: tu punto queda vivo toda la
+        // sesión. La cámara empieza enganchada para caer sobre tu posición, y se
+        // suelta apenas movés el mapa (la volvés a enganchar con la brújula).
+        camaraSigue    = true;
+        firstLocateFix = true;
+        pintarBrujula();
+        iniciarGPS();
 
         map.on(L.Draw.Event.CREATED, (e) => {
             polygonDrawHandler = null;
